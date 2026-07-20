@@ -30,11 +30,14 @@ class TurboDownloader private constructor(
 
     fun startDownload(
         url: String,
-        fileName: String = "file_${System.currentTimeMillis()}.bin"
+        fileName: String? = null
     ): DownloadId {
+        val ext = extractExtension(url)
+        val finalName = fileName ?: "file_${System.currentTimeMillis()}.$ext"
+
         val request = DownloadRequest(
             uri = url,
-            fileName = fileName,
+            fileName = finalName,
             destinationDir = destinationDir,
             threadCount = threadCount
         )
@@ -46,7 +49,7 @@ class TurboDownloader private constructor(
     fun cancel(id: DownloadId) = manager.cancel(id)
 
     fun downloadState() = manager.state
-//    fun getAllDownloads() = manager.allDownloads()
+    fun getAllDownloads() = manager.allDownloads()
 
     fun formatSpeed(speed: Long): String {
         return if (showFormatter) {
@@ -62,6 +65,10 @@ class TurboDownloader private constructor(
         } else {
             eta.toString()
         }
+    }
+
+    private fun extractExtension(url: String): String {
+        return url.substringAfterLast('.', "").substringBefore('?')
     }
 
     class Builder(private val activity: Activity, private val context: Context) {

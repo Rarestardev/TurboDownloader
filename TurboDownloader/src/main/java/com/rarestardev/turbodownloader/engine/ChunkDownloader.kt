@@ -32,9 +32,9 @@ class ChunkDownloader(
             createChunks(download)
         }
 
-        val tempDir = File(download.destinationDir, "${download.fileName}_chunk").apply {
-            if (!exists()) mkdirs()
-        }
+        val tempDir = File(download.destinationDir, "${download.id}_tmp")
+        tempDir.mkdirs()
+
 
         coroutineScope {
             chunks.map { chunk ->
@@ -117,11 +117,7 @@ class ChunkDownloader(
         dao.insertChunk(current.copy(isCompleted = true))
     }
 
-    private fun mergeChunks(
-        chunks: List<ChunkEntity>,
-        tempDir: File,
-        outputFile: File
-    ) {
+    private fun mergeChunks(chunks: List<ChunkEntity>, tempDir: File, outputFile: File) {
         outputFile.outputStream().use { output ->
             chunks.sortedBy { it.index }.forEach { chunk ->
                 val chunkFile = File(tempDir, "chunk_${chunk.index}.part")
@@ -131,5 +127,6 @@ class ChunkDownloader(
                 chunkFile.delete()
             }
         }
+        tempDir.deleteRecursively()
     }
 }

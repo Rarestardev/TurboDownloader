@@ -11,15 +11,31 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -31,11 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.storage.DownloadEntity
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -66,10 +84,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MDMTurboTheme {
                 val observerState by downloader.downloadState().collectAsState()
-//                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
                 val uri =
                     "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+
+               /* val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"*/
 
                 var downloadId by remember { mutableStateOf(DownloadId("")) }
                 var totalDownload by remember { mutableLongStateOf(-1) }
@@ -147,7 +167,7 @@ class MainActivity : ComponentActivity() {
                         text = "${formatSize(downloadBytes)} / ${formatSize(totalDownload)}"
                     )
 
-                    /*LazyColumn(
+                    LazyColumn(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(allDownloads){ entity  ->
@@ -161,7 +181,7 @@ class MainActivity : ComponentActivity() {
                                 onCancel = { downloader.cancel(DownloadId(entity.id)) }
                             )
                         }
-                    }*/
+                    }
                 }
             }
         }
@@ -184,7 +204,7 @@ fun formatSize(bytes: Long): String {
 }
 
 
-/*@Composable
+@Composable
 fun DownloadItem(
     entity: DownloadEntity,
     state: DownloadState?,
@@ -201,14 +221,14 @@ fun DownloadItem(
     }
 
     val speed = when(state) {
-        is DownloadState.Running -> downloader.formatSpeed(state.speedBytesPerSec)
+        is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
         else -> ""
     }
 
-    val eta = when(state) {
-        is DownloadState.Running -> downloader.formatEta(state.etaSeconds)
+    /*val eta = when(state) {
+        is DownloadState.Running -> downloader.formatEta(state.progress.)
         else -> ""
-    }
+    }*/
 
     Row(
         modifier = Modifier
@@ -243,7 +263,7 @@ fun DownloadItem(
             )
 
             Text(
-                text = "${formatSize(entity.totalBytes)} • $speed • $eta",
+                text = "$progress% • ${formatSize(entity.totalBytes)} • $speed",
                 color = Color.LightGray,
                 fontSize = 12.sp
             )
@@ -271,4 +291,16 @@ fun DownloadItem(
             Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
         }
     }
-}*/
+}
+
+fun Long.toSpeedString(): String {
+
+    val kb = this / 1024.0
+
+    val mb = kb / 1024.0
+
+    return when {
+        mb >= 1 -> "%.2f MB/s".format(mb)
+        else -> "%.0f KB/s".format(kb)
+    }
+}
