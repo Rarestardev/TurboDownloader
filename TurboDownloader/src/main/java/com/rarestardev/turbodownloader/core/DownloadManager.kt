@@ -1,0 +1,166 @@
+package com.rarestardev.turbodownloader.core
+
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import androidx.core.content.ContextCompat
+import com.rarestardev.turbodownloader.engine.ChunkDownloader
+import com.rarestardev.turbodownloader.model.DownloadProgress
+import com.rarestardev.turbodownloader.model.DownloadRequest
+import com.rarestardev.turbodownloader.service.DownloadService
+import com.rarestardev.turbodownloader.state.DownloadId
+import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.storage.DownloadDao
+import com.rarestardev.turbodownloader.storage.DownloadEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+class DownloadManager(
+    private val dao: DownloadDao,
+    private val scope: CoroutineScope,
+    private val context: Context
+) {
+    private val downloader = ChunkDownloader(dao)
+
+    private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
+    val state = _state.asStateFlow()
+
+    private val pauseFlags = mutableMapOf<String, Boolean>()
+    private val jobs = mutableMapOf<String, Job>()
+
+    fun enqueue(request: DownloadRequest): DownloadId {
+        ensureServiceRunning()
+        val id = DownloadId(UUID.randomUUID().toString())
+
+        val job = scope.launch(Dispatchers.IO) {
+            val totalSize = downloader.getFileSize(request.uri)
+
+            val entity = DownloadEntity(
+                id = id.value,
+                url = request.uri,
+                fileName = request.fileName,
+                destinationDir = request.destinationDir.absolutePath,
+                totalBytes = totalSize,
+                chunkCount = request.chunkCount,
+                status = "queued"
+            )
+
+            dao.insertDownload(entity)
+            dao.updateStatus(id.value, "running")
+            update(id, DownloadState.Queued(id))
+
+            enqueueInternal(entity)
+        }
+
+        jobs[id.value] = job
+        return id
+    }
+
+    fun resume(id: DownloadId) {
+        ensureServiceRunning()
+        val job = scope.launch(Dispatchers.IO) {
+            val entity = dao.getDownload(id.value) ?: return@launch
+            pauseFlags[id.value] = false
+            dao.updateStatus(id.value, "running")
+            enqueueInternal(entity)
+        }
+        jobs[id.value] = job
+    }
+
+    fun pause(id: DownloadId) {
+        pauseFlags[id.value] = true
+        scope.launch(Dispatchers.IO) {
+            dao.updateStatus(id.value, "paused")
+            val entity = dao.getDownload(id.value) ?: return@launch
+            val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+            update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+        }
+    }
+
+    fun cancel(id: DownloadId) {
+        scope.launch {
+            jobs[id.value]?.cancel()
+            pauseFlags[id.value] = false
+            dao.updateStatus(id.value, "cancelled")
+            update(id, DownloadState.Cancelled(id))
+            jobs.remove(id.value)
+        }
+        stopServiceIfIdle()
+    }
+
+    private fun enqueueInternal(entity: DownloadEntity) {
+        val id = DownloadId(entity.id)
+
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                var downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+
+                update(
+                    id,
+                    DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
+                )
+
+                val file = downloader.download(entity, { chunkBytes ->
+                    downloaded += chunkBytes
+                    update(
+                        id,
+                        DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
+                    )
+                }) {
+                    pauseFlags[id.value] == true
+                }
+
+                if (pauseFlags[id.value] == true) {
+                    update(
+                        id,
+                        DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded))
+                    )
+                    return@launch
+                }
+
+                dao.updateStatus(id.value, "completed")
+                update(id, DownloadState.Completed(id, file))
+            } catch (e: Exception) {
+                dao.updateStatus(id.value, "failed")
+                update(id, DownloadState.Failed(id, e))
+            } finally {
+                jobs.remove(id.value)
+            }
+        }
+
+        jobs[id.value] = job
+    }
+
+    private fun update(id: DownloadId, state: DownloadState) {
+        val map = _state.value.toMutableMap()
+        map[id] = state
+        _state.value = map
+    }
+
+    private fun ensureServiceRunning() {
+        val intent = Intent(context, DownloadService::class.java)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ContextCompat.startForegroundService(context, intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    private fun stopServiceIfIdle() {
+        val active =
+            _state.value.values.any { it is DownloadState.Running || it is DownloadState.Paused }
+        if (!active) {
+            val intent = Intent(context, DownloadService::class.java)
+            context.stopService(intent)
+        }
+
+        Log.e("DownloadManager","stop service")
+    }
+}

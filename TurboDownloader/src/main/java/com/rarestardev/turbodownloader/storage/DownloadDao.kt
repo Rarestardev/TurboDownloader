@@ -17,7 +17,7 @@ interface DownloadDao {
     suspend fun getDownload(id: String): DownloadEntity?
 
     @Query("SELECT * FROM chunks WHERE downloadId = :id")
-    suspend fun getChunk(id: String): List<ChunkEntity>
+    suspend fun getChunks(id: String): List<ChunkEntity>
 
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)

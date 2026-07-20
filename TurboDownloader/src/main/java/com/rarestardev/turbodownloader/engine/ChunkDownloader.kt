@@ -28,41 +28,93 @@ class ChunkDownloader(
         onProgress: (Long) -> Unit,
         isPaused: () -> Boolean
     ): File {
-        val chunks = dao.getChunk(download.id).ifEmpty {
+        val chunks = dao.getChunks(download.id).ifEmpty {
             createChunks(download)
         }
 
-        val tempDir = File(download.destinationDir,"${download.fileName}_chunk").apply {
+        val tempDir = File(download.destinationDir, "${download.fileName}_chunk").apply {
             if (!exists()) mkdirs()
         }
 
         coroutineScope {
             chunks.map { chunk ->
                 async(Dispatchers.IO) {
-                    downloadChunk(download.url,chunk,tempDir,onProgress,isPaused)
+                    downloadChunk(download.url, chunk, tempDir, onProgress, isPaused)
                 }
             }.awaitAll()
         }
 
-        val outputFile = File(download.destinationDir,download.fileName)
-        mergeChunks(chunks,tempDir,outputFile)
+        val outputFile = File(download.destinationDir, download.fileName)
+        mergeChunks(chunks, tempDir, outputFile)
         tempDir.deleteRecursively()
 
         return outputFile
     }
 
-    private fun createChunks(download: DownloadEntity): List<ChunkEntity> {
-        TODO("Not yet implemented")
+    private suspend fun createChunks(download: DownloadEntity): List<ChunkEntity> {
+        val chunkSize = download.totalBytes / download.chunkCount
+
+        val chunks = (0 until download.chunkCount).map { index ->
+            val start = index * chunkSize
+            val end =
+                if (index == download.chunkCount - 1) download.totalBytes - 1 else (start + chunkSize - 1)
+
+            ChunkEntity(
+                downloadId = download.id,
+                index = index,
+                start = start,
+                end = end,
+                downloaded = 0,
+                isCompleted = false
+            )
+        }
+
+        chunks.forEach { dao.insertChunk(it) }
+        return chunks
     }
 
-    private fun downloadChunk(
+    private suspend fun downloadChunk(
         url: String,
         chunk: ChunkEntity,
-        tempDir: File,
+        outputDir: File,
         onProgress: (Long) -> Unit,
-        paused: () -> Boolean
+        isPaused: () -> Boolean
     ) {
-        TODO("Not yet implemented")
+        if (chunk.isCompleted) return
+
+        var current = chunk
+        val startByte = current.start + current.downloaded
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Range", "bytes=$startByte-${current.end}")
+            .build()
+
+        val chunkFile = File(outputDir, "chunk_${current.index}.part")
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body ?: return
+            chunkFile.outputStream().use { output ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(8 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+
+                        if (isPaused()) {
+                            dao.insertChunk(current)
+                            return
+                        }
+
+                        output.write(buffer, 0, read)
+                        current = current.copy(downloaded = current.downloaded + read)
+                        dao.insertChunk(current)
+                        onProgress(read.toLong())
+                    }
+                }
+            }
+        }
+
+        dao.insertChunk(current.copy(isCompleted = true))
     }
 
     private fun mergeChunks(
@@ -70,6 +122,14 @@ class ChunkDownloader(
         tempDir: File,
         outputFile: File
     ) {
-        TODO("Not yet implemented")
+        outputFile.outputStream().use { output ->
+            chunks.sortedBy { it.index }.forEach { chunk ->
+                val chunkFile = File(tempDir, "chunk_${chunk.index}.part")
+                chunkFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+                chunkFile.delete()
+            }
+        }
     }
 }
