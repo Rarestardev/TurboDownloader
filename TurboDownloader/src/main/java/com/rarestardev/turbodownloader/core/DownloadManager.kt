@@ -13,6 +13,7 @@ import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
+import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,6 +60,7 @@ class DownloadManager(
         }
 
         jobs[id.value] = job
+        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG,"queued download...")
         return id
     }
 
@@ -71,6 +73,7 @@ class DownloadManager(
             enqueueInternal(entity)
         }
         jobs[id.value] = job
+        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG,"resume downloading...")
     }
 
     fun pause(id: DownloadId) {
@@ -81,6 +84,8 @@ class DownloadManager(
             val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
             update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
         }
+
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG,"pause downloading...")
     }
 
     fun cancel(id: DownloadId) {
@@ -92,6 +97,8 @@ class DownloadManager(
             jobs.remove(id.value)
         }
         stopServiceIfIdle()
+
+        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG,"cancel download running.")
     }
 
     private fun enqueueInternal(entity: DownloadEntity) {
@@ -151,6 +158,7 @@ class DownloadManager(
         } else {
             context.startService(intent)
         }
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG,"ensureServiceRunning.")
     }
 
     private fun stopServiceIfIdle() {
@@ -161,6 +169,6 @@ class DownloadManager(
             context.stopService(intent)
         }
 
-        Log.e("DownloadManager","stop service")
+        Log.e(TurboConstants.TURBO_DOWNLOADER_LOG,"stop service idle.")
     }
 }
