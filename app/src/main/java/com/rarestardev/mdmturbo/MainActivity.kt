@@ -1,7 +1,6 @@
 package com.rarestardev.mdmturbo
 
 import android.Manifest
-import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -34,9 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
-import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.core.TurboDownloader
-import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import java.io.File
@@ -65,6 +62,7 @@ class MainActivity : ComponentActivity() {
                 val downloader = TurboDownloader.Builder(this)
                     .setThread(4)
                     .setDir(dir)
+                    .setPermissionChecked(true)
                     .build()
 
                 val observerState by downloader.observeState().collectAsState()
