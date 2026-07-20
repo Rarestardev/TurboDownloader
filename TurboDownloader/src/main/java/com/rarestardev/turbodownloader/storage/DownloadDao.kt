@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DownloadDao {
@@ -21,4 +22,7 @@ interface DownloadDao {
 
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
+
+    @Query("SELECT * FROM downloads")
+    fun getAllDownloads(): Flow<List<DownloadEntity>>
 }

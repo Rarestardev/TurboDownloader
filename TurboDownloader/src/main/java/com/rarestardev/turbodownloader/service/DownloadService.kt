@@ -6,7 +6,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.room.Room
 import com.rarestardev.turbodownloader.core.DownloadManager
-import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.model.DownloadState
 import com.rarestardev.turbodownloader.storage.DownloadDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
