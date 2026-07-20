@@ -1,4 +1,4 @@
-package com.rarestardev.turbodownloader
+package com.rarestardev.turbodownloader.listener
 
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.state.DownloadId
@@ -9,6 +9,6 @@ interface TurboDownloadListener {
     fun onRunning(id: DownloadId, progress: DownloadProgress)
     fun onPaused(id: DownloadId, progress: DownloadProgress)
     fun onCompleted(id: DownloadId, file: File)
-    fun onFailed(id: DownloadId, error: Throwable)
+    fun onFailed(id: DownloadId, error: String)
     fun onCancelled(id: DownloadId)
 }

@@ -6,5 +6,5 @@ data class DownloadRequest(
     val uri: String,
     val fileName: String,
     val destinationDir: File,
-    val chunkCount: Int = 4
+    val threadCount: Int = 4
 )

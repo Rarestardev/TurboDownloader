@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
+import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
@@ -55,15 +56,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MDMTurboTheme {
-                val downloader = remember { MyRepository(this) }
-                val observerState by downloader.observeState().collectAsState()
-                val uri =
-                    "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
                 val dir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                     "MDM Turbo"
                 )
                 dir.mkdirs()
+
+                val downloader = TurboDownloader.Builder(this)
+                    .setThread(4)
+                    .setDir(dir)
+                    .build()
+
+                val observerState by downloader.observeState().collectAsState()
+                val uri =
+                    "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
 
                 var downloadId by remember { mutableStateOf(DownloadId("")) }
                 var totalDownload by remember { mutableLongStateOf(-1) }
@@ -71,7 +77,7 @@ class MainActivity : ComponentActivity() {
                 var progress by remember { mutableIntStateOf(-1) }
 
                 observerState.forEach { (_, state) ->
-                    when(state){
+                    when (state) {
                         is DownloadState.Cancelled -> println(state.id.value)
                         is DownloadState.Completed -> println(state.id.value)
                         is DownloadState.Failed -> println(state.id.value)
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
                         is DownloadState.Queued -> {
                             println(state.id.value)
                         }
+
                         is DownloadState.Running -> {
                             totalDownload = state.progress.totalBytes
                             progress = state.progress.percent
@@ -97,7 +104,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Button(
                         onClick = {
-                            downloadId = downloader.startDownload(uri, dir)
+                            downloadId = downloader.startDownload(uri, "")
                         }
                     ) {
                         Text(text = "download")
@@ -154,28 +161,4 @@ fun formatSize(bytes: Long): String {
     }
 
     return "%.2f %s".format(size, units[index])
-}
-
-class MyRepository(context: Context) {
-
-    private val api = ChunkDownloadApi(context)
-    private val manager = api.manager
-
-    fun startDownload(url: String, dir: File): DownloadId {
-        val request = DownloadRequest(
-            uri = url,
-            fileName = "file_${System.currentTimeMillis()}.bin",
-            destinationDir = dir,
-            chunkCount = 8
-        )
-        return manager.enqueue(request)
-    }
-
-    fun pause(id: DownloadId) = manager.pause(id)
-
-    fun resume(id: DownloadId) = manager.resume(id)
-
-    fun cancel(id: DownloadId) = manager.cancel(id)
-
-    fun observeState() = manager.state // Flow<Map<DownloadId, DownloadState>>
 }

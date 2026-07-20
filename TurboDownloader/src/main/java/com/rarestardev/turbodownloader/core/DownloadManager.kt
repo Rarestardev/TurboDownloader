@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.rarestardev.turbodownloader.listener.TurboDownloadListener
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
@@ -29,6 +30,12 @@ class DownloadManager(
 ) {
     private val downloader = ChunkDownloader(dao)
 
+    private var listener: TurboDownloadListener? = null
+
+    fun setListener(l: TurboDownloadListener) {
+        listener = l
+    }
+
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
 
@@ -48,7 +55,7 @@ class DownloadManager(
                 fileName = request.fileName,
                 destinationDir = request.destinationDir.absolutePath,
                 totalBytes = totalSize,
-                chunkCount = request.chunkCount,
+                chunkCount = request.threadCount,
                 status = "queued"
             )
 
@@ -60,7 +67,7 @@ class DownloadManager(
         }
 
         jobs[id.value] = job
-        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG,"queued download...")
+        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "queued download...")
         return id
     }
 
@@ -73,7 +80,7 @@ class DownloadManager(
             enqueueInternal(entity)
         }
         jobs[id.value] = job
-        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG,"resume downloading...")
+        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
     }
 
     fun pause(id: DownloadId) {
@@ -85,7 +92,7 @@ class DownloadManager(
             update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
         }
 
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG,"pause downloading...")
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
     }
 
     fun cancel(id: DownloadId) {
@@ -98,7 +105,7 @@ class DownloadManager(
         }
         stopServiceIfIdle()
 
-        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG,"cancel download running.")
+        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "cancel download running.")
     }
 
     private fun enqueueInternal(entity: DownloadEntity) {
@@ -148,6 +155,15 @@ class DownloadManager(
         val map = _state.value.toMutableMap()
         map[id] = state
         _state.value = map
+
+        when(state) {
+            is DownloadState.Queued -> listener?.onQueued(id)
+            is DownloadState.Running -> listener?.onRunning(id, state.progress)
+            is DownloadState.Paused -> listener?.onPaused(id, state.progress)
+            is DownloadState.Completed -> listener?.onCompleted(id, state.file)
+            is DownloadState.Failed -> listener?.onFailed(id, state.error?.message ?: "null")
+            is DownloadState.Cancelled -> listener?.onCancelled(id)
+        }
     }
 
     private fun ensureServiceRunning() {
@@ -158,7 +174,7 @@ class DownloadManager(
         } else {
             context.startService(intent)
         }
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG,"ensureServiceRunning.")
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "ensureServiceRunning.")
     }
 
     private fun stopServiceIfIdle() {
@@ -169,6 +185,6 @@ class DownloadManager(
             context.stopService(intent)
         }
 
-        Log.e(TurboConstants.TURBO_DOWNLOADER_LOG,"stop service idle.")
+        Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "stop service idle.")
     }
 }
