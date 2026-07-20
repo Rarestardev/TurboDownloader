@@ -93,7 +93,7 @@ class ChunkDownloader(
         val chunkFile = File(outputDir, "chunk_${current.index}.part")
 
         client.newCall(request).execute().use { response ->
-            val body = response.body ?: return
+            val body = response.body
             chunkFile.outputStream().use { output ->
                 body.byteStream().use { input ->
                     val buffer = ByteArray(8 * 1024)

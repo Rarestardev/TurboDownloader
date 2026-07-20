@@ -8,9 +8,9 @@ import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
-import com.rarestardev.turbodownloader.model.DownloadState
 import com.rarestardev.turbodownloader.service.DownloadService
 import com.rarestardev.turbodownloader.state.DownloadId
+import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
 import com.rarestardev.turbodownloader.utils.TurboConstants
@@ -102,11 +102,8 @@ class DownloadManager(
         Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "cancel download running.")
     }
 
-    private suspend fun enqueueInternal(entity: DownloadEntity) {
+    private fun enqueueInternal(entity: DownloadEntity) {
         val id = DownloadId(entity.id)
-
-        var lastTime = System.currentTimeMillis()
-        var lastBytes = dao.getChunks(id.value).sumOf { it.downloaded }
 
         val job = scope.launch(Dispatchers.IO) {
             try {
@@ -114,30 +111,14 @@ class DownloadManager(
 
                 update(
                     id,
-                    DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded), 0, -1)
+                    DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
                 )
 
                 val file = downloader.download(entity, { chunkBytes ->
                     downloaded += chunkBytes
-
-                    val now = System.currentTimeMillis()
-                    val diffTime = now - lastTime
-                    val diffBytes = downloaded - lastBytes
-
-                    val speed = if (diffTime > 0) diffBytes * 1000 / diffTime else 0
-                    val eta = if (speed > 0) (entity.totalBytes - downloaded) / speed else -1
-
-                    lastTime = now
-                    lastBytes = downloaded
-
                     update(
                         id,
-                        DownloadState.Running(
-                            id,
-                            DownloadProgress(entity.totalBytes, downloaded),
-                            speedBytesPerSec = speed,
-                            etaSeconds = eta
-                        )
+                        DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
                     )
                 }) {
                     pauseFlags[id.value] == true
@@ -153,6 +134,8 @@ class DownloadManager(
 
                 dao.updateStatus(id.value, "completed")
                 update(id, DownloadState.Completed(id, file))
+
+                Log.d(TurboConstants.TURBO_DOWNLOADER_LOG,"enqueueInternal")
             } catch (e: Exception) {
                 dao.updateStatus(id.value, "failed")
                 update(id, DownloadState.Failed(id, e))

@@ -51,8 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
-import com.rarestardev.turbodownloader.model.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadId
+import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.storage.DownloadEntity
 import java.io.File
 
@@ -67,25 +67,24 @@ class MainActivity : ComponentActivity() {
             100
         )
 
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "MDM Turbo"
+        )
+        dir.mkdirs()
+
+        val downloader = TurboDownloader.Builder(this,this)
+            .setThread(8)
+            .setDir(dir)
+            .setPermissionChecked(true)
+            .build()
+
         enableEdgeToEdge()
 
         setContent {
             MDMTurboTheme {
-                val dir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "MDM Turbo"
-                )
-                dir.mkdirs()
-
-                val downloader = TurboDownloader.Builder(this)
-                    .setThread(4)
-                    .setDir(dir)
-                    .setPermissionChecked(true)
-                    .setShowFormatter(true)
-                    .build()
-
                 val observerState by downloader.downloadState().collectAsState()
-                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+//                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
                 val uri =
                     "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
@@ -96,22 +95,24 @@ class MainActivity : ComponentActivity() {
                 var progress by remember { mutableIntStateOf(-1) }
 
                 observerState.forEach { (_, state) ->
-                    when (state) {
-                        is DownloadState.Cancelled -> println(state.id.value)
-                        is DownloadState.Completed -> println(state.id.value)
-                        is DownloadState.Failed -> println(state.id.value)
-                        is DownloadState.Paused -> println(state.id.value)
+                    when (val result = state) {
+                        is DownloadState.Cancelled -> println("Download cancelled")
+                        is DownloadState.Completed -> println("Download completed")
+                        is DownloadState.Failed -> println("Download failed")
+                        is DownloadState.Paused -> println("Download paused")
                         is DownloadState.Queued -> {
-                            println(state.id.value)
+                            println("Download Queued")
                         }
 
                         is DownloadState.Running -> {
-                            totalDownload = state.progress.totalBytes
-                            progress = state.progress.percent
-                            downloadBytes = state.progress.downloadBytes
+                            totalDownload = result.progress.totalBytes
+                            progress = result.progress.percent
+                            downloadBytes = result.progress.downloadBytes
+
+                            println("Progress : $progress \n , TotalDownload : $totalDownload \n , DownloadBytes : $downloadBytes")
                         }
 
-                        else -> {}
+                        DownloadState.Idle -> { println("idle")}
                     }
                 }
 
@@ -125,7 +126,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Button(
                         onClick = {
-                            downloadId = downloader.startDownload(uri, "")
+                            downloader.startDownload(uri)
                         }
                     ) {
                         Text(text = "download")
@@ -164,7 +165,7 @@ class MainActivity : ComponentActivity() {
                         text = "${formatSize(downloadBytes)} / ${formatSize(totalDownload)}"
                     )
 
-                    LazyColumn(
+                    /*LazyColumn(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(allDownloads){ entity  ->
@@ -178,7 +179,7 @@ class MainActivity : ComponentActivity() {
                                 onCancel = { downloader.cancel(DownloadId(entity.id)) }
                             )
                         }
-                    }
+                    }*/
                 }
             }
         }
@@ -201,7 +202,7 @@ fun formatSize(bytes: Long): String {
 }
 
 
-@Composable
+/*@Composable
 fun DownloadItem(
     entity: DownloadEntity,
     state: DownloadState?,
@@ -288,4 +289,4 @@ fun DownloadItem(
             Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
         }
     }
-}
+}*/

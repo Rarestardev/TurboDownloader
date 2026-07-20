@@ -46,7 +46,7 @@ class TurboDownloader private constructor(
     fun cancel(id: DownloadId) = manager.cancel(id)
 
     fun downloadState() = manager.state
-    fun getAllDownloads() = manager.allDownloads()
+//    fun getAllDownloads() = manager.allDownloads()
 
     fun formatSpeed(speed: Long): String {
         return if (showFormatter) {
@@ -64,12 +64,12 @@ class TurboDownloader private constructor(
         }
     }
 
-    class Builder(private val activity: Activity) {
+    class Builder(private val activity: Activity, private val context: Context) {
 
         private var threadCount: Int = 4
         private var destinationDir: File? = null
         private var checkPermission: Boolean = false
-        private var showFormatter: Boolean = true
+        private var showFormatter: Boolean = false
 
         fun setShowFormatter(enabled: Boolean) = apply {
             showFormatter = enabled
@@ -106,7 +106,7 @@ class TurboDownloader private constructor(
             }
 
             return TurboDownloader(
-                context = activity.applicationContext,
+                context = context.applicationContext,
                 threadCount = threadCount,
                 destinationDir = dir,
                 showFormatter = showFormatter
