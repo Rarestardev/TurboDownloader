@@ -2,6 +2,7 @@ package com.rarestardev.turbodownloader.storage
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.rarestardev.turbodownloader.state.DownloadStatus
 
 @Entity(tableName = "downloads")
 data class DownloadEntity(
@@ -11,5 +12,5 @@ data class DownloadEntity(
     val destinationDir: String,
     val totalBytes: Long,
     val chunkCount: Int,
-    val status: String
+    val status: DownloadStatus
 )

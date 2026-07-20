@@ -11,6 +11,7 @@ import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.service.DownloadService
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.state.DownloadStatus
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
 import com.rarestardev.turbodownloader.utils.TurboConstants
@@ -30,9 +31,11 @@ class DownloadManager(
     private val context: Context
 ) {
     private val downloader = ChunkDownloader(dao)
-
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
+
+    private val _status = MutableStateFlow(DownloadStatus.IDLE)
+    val status = _status.asStateFlow()
 
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
@@ -51,11 +54,12 @@ class DownloadManager(
                 destinationDir = request.destinationDir.absolutePath,
                 totalBytes = totalSize,
                 chunkCount = request.threadCount,
-                status = "queued"
+                status = DownloadStatus.QUEUED
             )
 
             dao.insertDownload(entity)
-            dao.updateStatus(id.value, "running")
+            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
+            _status.value = DownloadStatus.RUNNING
             update(id, DownloadState.Queued(id))
 
             enqueueInternal(entity)
@@ -71,17 +75,19 @@ class DownloadManager(
         val job = scope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(id.value) ?: return@launch
             pauseFlags[id.value] = false
-            dao.updateStatus(id.value, "running")
+            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
             enqueueInternal(entity)
         }
         jobs[id.value] = job
+        _status.value = DownloadStatus.RUNNING
         Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
     }
 
     fun pause(id: DownloadId) {
         pauseFlags[id.value] = true
         scope.launch(Dispatchers.IO) {
-            dao.updateStatus(id.value, "paused")
+            dao.updateStatus(id.value, DownloadStatus.PAUSED.name)
+            _status.value = DownloadStatus.PAUSED
             val entity = dao.getDownload(id.value) ?: return@launch
             val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
             /*update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))*/
@@ -92,7 +98,7 @@ class DownloadManager(
                     DownloadProgress(
                         totalBytes = entity.totalBytes,
                         downloadBytes = downloaded,
-                        status = "paused"
+                        status = DownloadStatus.PAUSED.name
                     )
                 )
             )
@@ -105,7 +111,8 @@ class DownloadManager(
         scope.launch {
             jobs[id.value]?.cancel()
             pauseFlags[id.value] = false
-            dao.updateStatus(id.value, "cancelled")
+            dao.updateStatus(id.value, DownloadStatus.CANCELLED.name)
+            _status.value = DownloadStatus.CANCELLED
             update(id, DownloadState.Cancelled(id))
             jobs.remove(id.value)
         }
@@ -150,16 +157,11 @@ class DownloadManager(
                                     downloadBytes = downloaded,
                                     speedBytesPerSec = speed,
                                     remainingTimeMillis = remainTime,
-                                    status = "running"
+                                    status = DownloadStatus.RUNNING.name
                                 )
                             )
                         )
                     }
-
-                    /*update(
-                        id,
-                        DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
-                    )*/
                 }) {
                     pauseFlags[id.value] == true
                 }
@@ -172,12 +174,14 @@ class DownloadManager(
                     return@launch
                 }
 
-                dao.updateStatus(id.value, "completed")
+                dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
+                _status.value = DownloadStatus.COMPLETED
                 update(id, DownloadState.Completed(id, file))
 
                 Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "enqueueInternal")
             } catch (e: Exception) {
-                dao.updateStatus(id.value, "failed")
+                dao.updateStatus(id.value, DownloadStatus.FAILED.name)
+                _status.value = DownloadStatus.FAILED
                 update(id, DownloadState.Failed(id, e))
             } finally {
                 jobs.remove(id.value)
