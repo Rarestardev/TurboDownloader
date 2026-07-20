@@ -14,7 +14,7 @@ object NotificationHelper {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Chunk Downloads",
+                "turbodownloader",
                 NotificationManager.IMPORTANCE_LOW
             )
             val nm = context.getSystemService(NotificationManager::class.java)
