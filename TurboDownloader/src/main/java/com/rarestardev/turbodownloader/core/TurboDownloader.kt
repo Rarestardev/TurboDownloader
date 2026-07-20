@@ -10,16 +10,23 @@ import androidx.core.app.ActivityCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
+import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
 import java.io.File
 
 class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
-    private val destinationDir: File
+    private val destinationDir: File,
+    private val showFormatter: Boolean
 ) {
+
     private val api = ChunkDownloadApi(context)
     private val manager = api.manager
+
+    // -------------------------
+    // PUBLIC API
+    // -------------------------
 
     fun startDownload(
         url: String,
@@ -37,13 +44,36 @@ class TurboDownloader private constructor(
     fun pause(id: DownloadId) = manager.pause(id)
     fun resume(id: DownloadId) = manager.resume(id)
     fun cancel(id: DownloadId) = manager.cancel(id)
+
     fun downloadState() = manager.state
     fun getAllDownloads() = manager.allDownloads()
 
+    fun formatSpeed(speed: Long): String {
+        return if (showFormatter) {
+            FormatUtils.formatSpeed(speed)
+        } else {
+            speed.toString()
+        }
+    }
+
+    fun formatEta(eta: Long): String {
+        return if (showFormatter) {
+            FormatUtils.formatEta(eta)
+        } else {
+            eta.toString()
+        }
+    }
+
     class Builder(private val activity: Activity) {
+
         private var threadCount: Int = 4
         private var destinationDir: File? = null
         private var checkPermission: Boolean = false
+        private var showFormatter: Boolean = true
+
+        fun setShowFormatter(enabled: Boolean) = apply {
+            showFormatter = enabled
+        }
 
         fun setThread(count: Int) = apply {
             threadCount = count
@@ -58,6 +88,7 @@ class TurboDownloader private constructor(
         }
 
         fun build(): TurboDownloader {
+
             val dir = destinationDir
                 ?: throw IllegalStateException("Destination directory is required")
 
@@ -77,7 +108,8 @@ class TurboDownloader private constructor(
             return TurboDownloader(
                 context = activity.applicationContext,
                 threadCount = threadCount,
-                destinationDir = dir
+                destinationDir = dir,
+                showFormatter = showFormatter
             )
         }
 
