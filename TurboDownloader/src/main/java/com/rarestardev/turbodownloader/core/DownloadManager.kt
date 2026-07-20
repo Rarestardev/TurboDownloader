@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.rarestardev.turbodownloader.listener.TurboDownloadListener
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
@@ -29,12 +28,6 @@ class DownloadManager(
     private val context: Context
 ) {
     private val downloader = ChunkDownloader(dao)
-
-    private var listener: TurboDownloadListener? = null
-
-    fun setListener(l: TurboDownloadListener) {
-        listener = l
-    }
 
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
@@ -155,15 +148,6 @@ class DownloadManager(
         val map = _state.value.toMutableMap()
         map[id] = state
         _state.value = map
-
-        when(state) {
-            is DownloadState.Queued -> listener?.onQueued(id)
-            is DownloadState.Running -> listener?.onRunning(id, state.progress)
-            is DownloadState.Paused -> listener?.onPaused(id, state.progress)
-            is DownloadState.Completed -> listener?.onCompleted(id, state.file)
-            is DownloadState.Failed -> listener?.onFailed(id, state.error?.message ?: "null")
-            is DownloadState.Cancelled -> listener?.onCancelled(id)
-        }
     }
 
     private fun ensureServiceRunning() {
