@@ -68,13 +68,16 @@ class DownloadManager(
     fun resume(id: DownloadId) {
         ensureServiceRunning()
         val job = scope.launch(Dispatchers.IO) {
-            val entity = dao.getDownload(id.value) ?: return@launch
+            jobs.remove(id.value)
+
             pauseFlags[id.value] = false
+            val entity = dao.getDownload(id.value) ?: return@launch
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
             enqueueInternal(entity)
         }
+
         jobs[id.value] = job
-        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
     }
 
     fun pause(id: DownloadId) {
@@ -100,13 +103,18 @@ class DownloadManager(
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
     }
 
-    fun cancel(id: DownloadId) {
+    suspend fun cancel(id: DownloadId) {
         scope.launch {
             jobs[id.value]?.cancel()
             pauseFlags[id.value] = false
             dao.updateStatus(id.value, DownloadStatus.CANCELLED.name)
             update(id, DownloadState.Cancelled(id))
             jobs.remove(id.value)
+        }
+        val entity = dao.getDownload(id.value)
+
+        entity?.let {
+            File(it.destinationDir, "${it.id}_tmp").deleteRecursively()
         }
         stopServiceIfIdle()
 
@@ -126,6 +134,7 @@ class DownloadManager(
                     id,
                     DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
                 )
+
 
                 val file = downloader.download(entity, { chunkBytes ->
                     downloaded += chunkBytes
@@ -157,7 +166,6 @@ class DownloadManager(
                 }) {
                     pauseFlags[id.value] == true
                 }
-
                 if (pauseFlags[id.value] == true) {
                     update(
                         id,
@@ -175,8 +183,13 @@ class DownloadManager(
                 update(id, DownloadState.Failed(id, e))
             } finally {
                 jobs.remove(id.value)
-                val tempDir = File(entity.destinationDir, "${entity.id}_tmp")
-                if (tempDir.exists()) tempDir.deleteRecursively()
+
+                if (pauseFlags[id.value] != true) {
+                    val tempDir = File(entity.destinationDir, "${entity.id}_tmp")
+                    if (tempDir.exists()) {
+                        tempDir.deleteRecursively()
+                    }
+                }
             }
         }
 

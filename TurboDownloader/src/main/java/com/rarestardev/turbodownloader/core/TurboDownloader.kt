@@ -46,7 +46,7 @@ class TurboDownloader private constructor(
 
     fun pause(id: DownloadId) = manager.pause(id)
     fun resume(id: DownloadId) = manager.resume(id)
-    fun cancel(id: DownloadId) = manager.cancel(id)
+    suspend fun cancel(id: DownloadId) = manager.cancel(id)
 
     fun downloadState() = manager.state
     fun getAllDownloads() = manager.allDownloads()

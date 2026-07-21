@@ -42,6 +42,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,7 +54,9 @@ import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.state.DownloadStatus
 import com.rarestardev.turbodownloader.storage.DownloadEntity
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -73,7 +76,7 @@ class MainActivity : ComponentActivity() {
         )
         dir.mkdirs()
 
-        val downloader = TurboDownloader.Builder(this,this)
+        val downloader = TurboDownloader.Builder(this, this)
             .setThread(8)
             .setDir(dir)
             .setPermissionChecked(true)
@@ -83,6 +86,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MDMTurboTheme {
+                val scope = rememberCoroutineScope()
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
@@ -112,7 +116,9 @@ class MainActivity : ComponentActivity() {
                             println("Progress : $progress \n , TotalDownload : $totalDownload \n , DownloadBytes : $downloadBytes")
                         }
 
-                        is DownloadState.Idle -> { println("idle")}
+                        is DownloadState.Idle -> {
+                            println("idle")
+                        }
                     }
                 }
 
@@ -124,6 +130,8 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    Spacer(Modifier.height(36.dp))
+
                     Button(
                         onClick = {
                             downloader.startDownload(uri)
@@ -132,43 +140,10 @@ class MainActivity : ComponentActivity() {
                         Text(text = "download")
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            downloader.pause(downloadId)
-                        }
-                    ) {
-                        Text(text = "pause")
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            downloader.resume(downloadId)
-                        }
-                    ) {
-                        Text(text = "resume")
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                    )
-
-                    Text(
-                        text = "${formatSize(downloadBytes)} / ${formatSize(totalDownload)}"
-                    )
-
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(allDownloads){ entity  ->
+                        items(allDownloads) { entity ->
                             val state = observerState[DownloadId(entity.id)]
                             DownloadItem(
                                 downloader = downloader,
@@ -176,7 +151,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onPause = { downloader.pause(DownloadId(entity.id)) },
                                 onResume = { downloader.resume(DownloadId(entity.id)) },
-                                onCancel = { downloader.cancel(DownloadId(entity.id)) }
+                                onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } }
                             )
                         }
                     }
@@ -186,7 +161,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun formatSize(bytes: Long): String {
+private fun formatSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
 
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
@@ -211,22 +186,17 @@ fun DownloadItem(
     onCancel: () -> Unit,
     downloader: TurboDownloader
 ) {
-    val progress = when(state) {
+    val progress = when (state) {
         is DownloadState.Running -> state.progress.percent
         is DownloadState.Paused -> state.progress.percent
         is DownloadState.Completed -> 100
         else -> 0
     }
 
-    val speed = when(state) {
+    val speed = when (state) {
         is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
         else -> "0 KB"
     }
-
-    /*val eta = when(state) {
-        is DownloadState.Running -> downloader.formatEta(state.progress.)
-        else -> ""
-    }*/
 
     Row(
         modifier = Modifier
@@ -237,7 +207,7 @@ fun DownloadItem(
 
         // Status Icon
         Icon(
-            imageVector = when(state) {
+            imageVector = when (state) {
                 is DownloadState.Running -> Icons.Default.Downloading
                 is DownloadState.Paused -> Icons.Default.Pause
                 is DownloadState.Completed -> Icons.Default.Check
@@ -257,11 +227,15 @@ fun DownloadItem(
 
             LinearProgressIndicator(
                 progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
             )
 
+//            ${formatSize(downloadBytes)}
+
             Text(
-                text = "$progress% • ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
+                text = "$progress% •  ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
                 color = Color.LightGray,
                 fontSize = 12.sp
             )
@@ -270,13 +244,14 @@ fun DownloadItem(
         Spacer(Modifier.width(12.dp))
 
         // Pause / Resume / Cancel
-        when(state) {
-            is DownloadState.Running -> {
+        when (entity.status) {
+            DownloadStatus.RUNNING -> {
                 IconButton(onClick = onPause) {
                     Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
                 }
             }
-            is DownloadState.Paused -> {
+
+            DownloadStatus.PAUSED -> {
                 IconButton(onClick = onResume) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
                 }
