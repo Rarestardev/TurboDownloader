@@ -1,6 +1,5 @@
-package com.rarestardev.mdmturbo.ui.theme
+package com.rarestardev.sample.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

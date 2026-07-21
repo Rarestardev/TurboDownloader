@@ -1,4 +1,4 @@
-package com.rarestardev.mdmturbo.ui.theme
+package com.rarestardev.sample.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

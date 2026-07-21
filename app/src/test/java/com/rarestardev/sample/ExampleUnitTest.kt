@@ -1,4 +1,4 @@
-package com.rarestardev.mdmturbo
+package com.rarestardev.sample
 
 import org.junit.Test
 

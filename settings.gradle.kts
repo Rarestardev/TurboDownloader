@@ -25,6 +25,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MDM Turbo"
+rootProject.name = "TurboDownloader"
 include(":app")
-include(":TurboDownloader")
+include(":turbodownloader")

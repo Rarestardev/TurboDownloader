@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.rarestardev.mdmturbo"
+    namespace = "com.rarestardev.sample"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.rarestardev.mdmturbo"
+        applicationId = "com.rarestardev.sample"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -52,7 +52,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":TurboDownloader"))
+    implementation(project(":turbodownloader"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

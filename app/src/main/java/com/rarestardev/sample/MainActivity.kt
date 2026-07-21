@@ -1,4 +1,4 @@
-package com.rarestardev.mdmturbo
+package com.rarestardev.sample
 
 import android.os.Build
 import android.os.Bundle
@@ -43,7 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
+import com.rarestardev.sample.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.state.DownloadId
