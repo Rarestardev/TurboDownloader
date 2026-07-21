@@ -1,6 +1,5 @@
 package com.rarestardev.mdmturbo
 
-import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -11,43 +10,56 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
+import androidx.compose.ui.unit.sp
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
+import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
+import com.rarestardev.turbodownloader.state.DownloadStatus
+import com.rarestardev.turbodownloader.storage.DownloadEntity
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var downloader: TurboDownloader
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-            100
-        )
 
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -55,120 +67,85 @@ class MainActivity : ComponentActivity() {
         )
         dir.mkdirs()
 
-        val downloader = TurboDownloader.Builder(this,this)
+        downloader = TurboDownloader.Builder(this, this)
             .setThread(8)
             .setDir(dir)
             .setPermissionChecked(true)
+            .setNotificationListener(object : DownloadNotificationListener{
+                override fun onNotificationClick(downloadId: DownloadId) {
+                    println("click")
+                }
+
+                override fun onPauseClick(downloadId: DownloadId) {
+                    println("pause click")
+                }
+
+                override fun onResumeClick(downloadId: DownloadId) {
+                    println("resume click")
+                }
+
+                override fun onCancelClick(downloadId: DownloadId) {
+                    println("cancel click")
+                }
+
+            })
             .build()
 
         enableEdgeToEdge()
 
         setContent {
             MDMTurboTheme {
+                val scope = rememberCoroutineScope()
                 val observerState by downloader.downloadState().collectAsState()
-//                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
-                val uri =
-                    "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
-
-                var downloadId by remember { mutableStateOf(DownloadId("")) }
-                var totalDownload by remember { mutableLongStateOf(-1) }
-                var downloadBytes by remember { mutableLongStateOf(-1) }
-                var progress by remember { mutableIntStateOf(-1) }
-
-                observerState.forEach { (_, state) ->
-                    when (val result = state) {
-                        is DownloadState.Cancelled -> println("Download cancelled")
-                        is DownloadState.Completed -> println("Download completed")
-                        is DownloadState.Failed -> println("Download failed")
-                        is DownloadState.Paused -> println("Download paused")
-                        is DownloadState.Queued -> {
-                            println("Download Queued")
-                        }
-
-                        is DownloadState.Running -> {
-                            totalDownload = result.progress.totalBytes
-                            progress = result.progress.percent
-                            downloadBytes = result.progress.downloadBytes
-
-                            println("Progress : $progress \n , TotalDownload : $totalDownload \n , DownloadBytes : $downloadBytes")
-                        }
-
-                        DownloadState.Idle -> { println("idle")}
-                    }
-                }
+                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+//                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
 
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .statusBarsPadding()
                         .background(Color.DarkGray),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    Spacer(Modifier.height(36.dp))
+
                     Button(
                         onClick = {
                             downloader.startDownload(uri)
-                        }
+                        },
+                        modifier = Modifier.statusBarsPadding()
                     ) {
                         Text(text = "download")
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            downloader.pause(downloadId)
-                        }
-                    ) {
-                        Text(text = "pause")
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
-                            downloader.resume(downloadId)
-                        }
-                    ) {
-                        Text(text = "resume")
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                    )
-
-                    Text(
-                        text = "${formatSize(downloadBytes)} / ${formatSize(totalDownload)}"
-                    )
-
-                    /*LazyColumn(
+                    LazyColumn(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(allDownloads){ entity  ->
+                        items(allDownloads) { entity ->
                             val state = observerState[DownloadId(entity.id)]
                             DownloadItem(
-                                downloader = downloader,
                                 entity = entity,
                                 state = state,
                                 onPause = { downloader.pause(DownloadId(entity.id)) },
                                 onResume = { downloader.resume(DownloadId(entity.id)) },
-                                onCancel = { downloader.cancel(DownloadId(entity.id)) }
+                                onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } }
                             )
                         }
-                    }*/
+                    }
                 }
             }
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        downloader.release()
+    }
 }
 
-fun formatSize(bytes: Long): String {
+private fun formatSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
 
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
@@ -184,30 +161,24 @@ fun formatSize(bytes: Long): String {
 }
 
 
-/*@Composable
+@Composable
 fun DownloadItem(
     entity: DownloadEntity,
     state: DownloadState?,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onCancel: () -> Unit,
-    downloader: TurboDownloader
+    onCancel: () -> Unit
 ) {
-    val progress = when(state) {
+    val progress = when (state) {
         is DownloadState.Running -> state.progress.percent
         is DownloadState.Paused -> state.progress.percent
         is DownloadState.Completed -> 100
         else -> 0
     }
 
-    val speed = when(state) {
-        is DownloadState.Running -> downloader.formatSpeed(state.speedBytesPerSec)
-        else -> ""
-    }
-
-    val eta = when(state) {
-        is DownloadState.Running -> downloader.formatEta(state.etaSeconds)
-        else -> ""
+    val speed = when (state) {
+        is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
+        else -> "0 KB"
     }
 
     Row(
@@ -219,7 +190,7 @@ fun DownloadItem(
 
         // Status Icon
         Icon(
-            imageVector = when(state) {
+            imageVector = when (state) {
                 is DownloadState.Running -> Icons.Default.Downloading
                 is DownloadState.Paused -> Icons.Default.Pause
                 is DownloadState.Completed -> Icons.Default.Check
@@ -239,11 +210,15 @@ fun DownloadItem(
 
             LinearProgressIndicator(
                 progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
             )
 
+//            ${formatSize(downloadBytes)}
+
             Text(
-                text = "${formatSize(entity.totalBytes)} • $speed • $eta",
+                text = "$progress% •  ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
                 color = Color.LightGray,
                 fontSize = 12.sp
             )
@@ -252,13 +227,14 @@ fun DownloadItem(
         Spacer(Modifier.width(12.dp))
 
         // Pause / Resume / Cancel
-        when(state) {
-            is DownloadState.Running -> {
+        when (entity.status) {
+            DownloadStatus.RUNNING -> {
                 IconButton(onClick = onPause) {
                     Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
                 }
             }
-            is DownloadState.Paused -> {
+
+            DownloadStatus.PAUSED -> {
                 IconButton(onClick = onResume) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
                 }
@@ -271,4 +247,16 @@ fun DownloadItem(
             Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
         }
     }
-}*/
+}
+
+fun Long.toSpeedString(): String {
+
+    val kb = this / 1024.0
+
+    val mb = kb / 1024.0
+
+    return when {
+        mb >= 1 -> "%.2f MB/s".format(mb)
+        else -> "%.0f KB/s".format(kb)
+    }
+}

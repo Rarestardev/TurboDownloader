@@ -1,11 +1,9 @@
 package com.rarestardev.turbodownloader.storage
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 
-@Entity(tableName = "chunks")
+@Entity(tableName = "chunks", primaryKeys = ["downloadId", "index"])
 data class ChunkEntity(
-    @PrimaryKey(autoGenerate = true) val chunkId: Long = 0,
     val downloadId: String,
     val index: Int,
     val start: Long,

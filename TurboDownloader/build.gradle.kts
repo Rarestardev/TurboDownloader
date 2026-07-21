@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.library)
     id("com.google.devtools.ksp")
     id("androidx.room")
+    id("maven-publish")
 }
 
 android {
@@ -14,6 +15,11 @@ android {
         }
     }
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
     defaultConfig {
         minSdk = 24
 
@@ -24,7 +30,23 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            afterEvaluate {
+                from(
+                    components["release"]
+                )
+            }
+            groupId = "com.rarestardev"
+            artifactId = "turbodownloader"
+
+            version =
+                "1.0.0"
+        }
+    }
 }
 
 room {
@@ -42,16 +64,15 @@ kotlin {
 }
 
 dependencies {
-    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
-    implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
 
-    implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation(libs.okhttp)
 
-    implementation("androidx.room:room-ktx:2.8.4")
-    implementation("androidx.room:room-runtime:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.startup.runtime)
 }

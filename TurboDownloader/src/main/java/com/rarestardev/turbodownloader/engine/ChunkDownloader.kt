@@ -10,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
 
 class ChunkDownloader(
     private val dao: DownloadDao,
@@ -32,9 +33,9 @@ class ChunkDownloader(
             createChunks(download)
         }
 
-        val tempDir = File(download.destinationDir, "${download.fileName}_chunk").apply {
-            if (!exists()) mkdirs()
-        }
+        val tempDir = File(download.destinationDir, "${download.id}_tmp")
+        tempDir.mkdirs()
+
 
         coroutineScope {
             chunks.map { chunk ->
@@ -42,6 +43,12 @@ class ChunkDownloader(
                     downloadChunk(download.url, chunk, tempDir, onProgress, isPaused)
                 }
             }.awaitAll()
+        }
+
+        val latestChunks = dao.getChunks(download.id)
+
+        if (latestChunks.any { !it.isCompleted }) {
+            return File("")
         }
 
         val outputFile = File(download.destinationDir, download.fileName)
@@ -83,18 +90,29 @@ class ChunkDownloader(
         if (chunk.isCompleted) return
 
         var current = chunk
-        val startByte = current.start + current.downloaded
+        val chunkFile = File(outputDir, "chunk_${current.index}.part")
 
+//        val startByte = current.start + current.downloaded
+
+        if (chunkFile.exists()) {
+            val realDownloaded = chunkFile.length()
+
+            if (realDownloaded != current.downloaded) {
+                current = current.copy(downloaded = realDownloaded)
+                dao.insertChunk(current)
+            }
+        }
+
+        val startByte = current.start + current.downloaded
         val request = Request.Builder()
             .url(url)
+//            .addHeader("Range", "bytes=$startByte-${current.end}")
             .addHeader("Range", "bytes=$startByte-${current.end}")
             .build()
 
-        val chunkFile = File(outputDir, "chunk_${current.index}.part")
-
         client.newCall(request).execute().use { response ->
             val body = response.body
-            chunkFile.outputStream().use { output ->
+            FileOutputStream(chunkFile, true).use { output ->
                 body.byteStream().use { input ->
                     val buffer = ByteArray(8 * 1024)
                     var read: Int
@@ -117,11 +135,7 @@ class ChunkDownloader(
         dao.insertChunk(current.copy(isCompleted = true))
     }
 
-    private fun mergeChunks(
-        chunks: List<ChunkEntity>,
-        tempDir: File,
-        outputFile: File
-    ) {
+    private fun mergeChunks(chunks: List<ChunkEntity>, tempDir: File, outputFile: File) {
         outputFile.outputStream().use { output ->
             chunks.sortedBy { it.index }.forEach { chunk ->
                 val chunkFile = File(tempDir, "chunk_${chunk.index}.part")
@@ -131,5 +145,6 @@ class ChunkDownloader(
                 chunkFile.delete()
             }
         }
+        tempDir.deleteRecursively()
     }
 }

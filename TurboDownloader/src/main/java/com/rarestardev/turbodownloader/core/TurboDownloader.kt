@@ -1,13 +1,18 @@
 package com.rarestardev.turbodownloader.core
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
+import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
@@ -18,23 +23,27 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val destinationDir: File,
-    private val showFormatter: Boolean
+    private val showFormatter: Boolean,
+    private val notificationListener: DownloadNotificationListener?
 ) {
+    private val manager = ChunkDownloadApi.get(context)
 
-    private val api = ChunkDownloadApi(context)
-    private val manager = api.manager
-
-    // -------------------------
-    // PUBLIC API
-    // -------------------------
+    init {
+        notificationListener?.let {
+            ChunkDownloadApi.setNotificationListener(it)
+        }
+    }
 
     fun startDownload(
         url: String,
-        fileName: String = "file_${System.currentTimeMillis()}.bin"
+        fileName: String? = null
     ): DownloadId {
+        val ext = extractExtension(url)
+        val finalName = fileName ?: "file_${System.currentTimeMillis()}.$ext"
+
         val request = DownloadRequest(
             uri = url,
-            fileName = fileName,
+            fileName = finalName,
             destinationDir = destinationDir,
             threadCount = threadCount
         )
@@ -43,10 +52,10 @@ class TurboDownloader private constructor(
 
     fun pause(id: DownloadId) = manager.pause(id)
     fun resume(id: DownloadId) = manager.resume(id)
-    fun cancel(id: DownloadId) = manager.cancel(id)
-
+    suspend fun cancel(id: DownloadId) = manager.cancel(id)
+    fun release() = manager.release()
     fun downloadState() = manager.state
-//    fun getAllDownloads() = manager.allDownloads()
+    fun getAllDownloads() = manager.allDownloads()
 
     fun formatSpeed(speed: Long): String {
         return if (showFormatter) {
@@ -64,8 +73,14 @@ class TurboDownloader private constructor(
         }
     }
 
+    private fun extractExtension(url: String): String {
+        return url.substringAfterLast('.', "").substringBefore('?')
+    }
+
     class Builder(private val activity: Activity, private val context: Context) {
 
+        private var notificationListener:
+                DownloadNotificationListener? = null
         private var threadCount: Int = 4
         private var destinationDir: File? = null
         private var checkPermission: Boolean = false
@@ -85,6 +100,12 @@ class TurboDownloader private constructor(
 
         fun setPermissionChecked(enabled: Boolean) = apply {
             checkPermission = enabled
+        }
+
+        fun setNotificationListener(
+            listener: DownloadNotificationListener
+        ) = apply {
+            notificationListener = listener
         }
 
         fun build(): TurboDownloader {
@@ -109,26 +130,47 @@ class TurboDownloader private constructor(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 destinationDir = dir,
-                showFormatter = showFormatter
+                showFormatter = showFormatter,
+                notificationListener = notificationListener
             )
         }
 
-        private fun hasNotificationPermission(activity: Activity): Boolean {
+        private fun hasNotificationPermission(
+            activity: Activity
+        ): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 ActivityCompat.checkSelfPermission(
                     activity,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
-            } else true
+            } else {
+                NotificationManagerCompat
+                    .from(activity)
+                    .areNotificationsEnabled()
+            }
         }
 
-        private fun requestNotificationPermission(activity: Activity) {
+        @SuppressLint("InlinedApi")
+        private fun requestNotificationPermission(
+            activity: Activity
+        ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 ActivityCompat.requestPermissions(
                     activity,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    arrayOf(
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ),
                     100
                 )
+            } else {
+                val intent = Intent().apply {
+                        action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                        putExtra(
+                            Settings.EXTRA_APP_PACKAGE,
+                            activity.packageName
+                        )
+                    }
+                activity.startActivity(intent)
             }
         }
     }
