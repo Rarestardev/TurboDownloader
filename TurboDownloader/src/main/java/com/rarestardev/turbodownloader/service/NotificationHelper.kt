@@ -71,6 +71,7 @@ object NotificationHelper {
             )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setContentIntent(notificationClickIntent(context, id))
             .addAction(
                 android.R.drawable.ic_media_pause,
                 "توقف",
@@ -184,6 +185,28 @@ object NotificationHelper {
             context,
             id.value.hashCode() + action.hashCode(),
             intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun notificationClickIntent(context: Context,id: DownloadId): PendingIntent? {
+        val clickIntent =
+            Intent(
+                context,
+                DownloadReceiver::class.java
+            ).apply {
+                action = ACTION_CLICK
+                putExtra(
+                    "DOWNLOAD_ID",
+                    id.value
+                )
+            }
+
+        return PendingIntent.getBroadcast(
+            context,
+            id.value.hashCode(),
+            clickIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                     PendingIntent.FLAG_IMMUTABLE
         )

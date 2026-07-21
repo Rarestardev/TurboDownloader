@@ -38,21 +38,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
+import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadStatus
@@ -84,6 +79,24 @@ class MainActivity : ComponentActivity() {
             .setThread(8)
             .setDir(dir)
             .setPermissionChecked(true)
+            .setNotificationListener(object : DownloadNotificationListener{
+                override fun onNotificationClick(downloadId: DownloadId) {
+                    println("click")
+                }
+
+                override fun onPauseClick(downloadId: DownloadId) {
+                    println("pause click")
+                }
+
+                override fun onResumeClick(downloadId: DownloadId) {
+                    println("resume click")
+                }
+
+                override fun onCancelClick(downloadId: DownloadId) {
+                    println("cancel click")
+                }
+
+            })
             .build()
 
         enableEdgeToEdge()
@@ -96,35 +109,6 @@ class MainActivity : ComponentActivity() {
 
                 val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
 //                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
-
-                var downloadId by remember { mutableStateOf(DownloadId("")) }
-                var totalDownload by remember { mutableLongStateOf(-1) }
-                var downloadBytes by remember { mutableLongStateOf(-1) }
-                var progress by remember { mutableIntStateOf(-1) }
-
-                observerState.forEach { (_, state) ->
-                    when (val result = state) {
-                        is DownloadState.Cancelled -> println("Download cancelled")
-                        is DownloadState.Completed -> println("Download completed")
-                        is DownloadState.Failed -> println("Download failed")
-                        is DownloadState.Paused -> println("Download paused")
-                        is DownloadState.Queued -> {
-                            println("Download Queued")
-                        }
-
-                        is DownloadState.Running -> {
-                            totalDownload = result.progress.totalBytes
-                            progress = result.progress.percent
-                            downloadBytes = result.progress.downloadBytes
-
-                            println("Progress : $progress \n , TotalDownload : $totalDownload \n , DownloadBytes : $downloadBytes")
-                        }
-
-                        is DownloadState.Idle -> {
-                            println("idle")
-                        }
-                    }
-                }
 
                 Column(
                     modifier = Modifier
@@ -150,7 +134,6 @@ class MainActivity : ComponentActivity() {
                         items(allDownloads) { entity ->
                             val state = observerState[DownloadId(entity.id)]
                             DownloadItem(
-                                downloader = downloader,
                                 entity = entity,
                                 state = state,
                                 onPause = { downloader.pause(DownloadId(entity.id)) },
@@ -192,8 +175,7 @@ fun DownloadItem(
     state: DownloadState?,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onCancel: () -> Unit,
-    downloader: TurboDownloader
+    onCancel: () -> Unit
 ) {
     val progress = when (state) {
         is DownloadState.Running -> state.progress.percent
