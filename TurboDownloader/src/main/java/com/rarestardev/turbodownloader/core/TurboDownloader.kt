@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
+import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
@@ -18,13 +19,16 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val destinationDir: File,
-    private val showFormatter: Boolean
+    private val showFormatter: Boolean,
+    private val notificationListener: DownloadNotificationListener?
 ) {
     private val manager = ChunkDownloadApi.get(context)
 
-    // -------------------------
-    // PUBLIC API
-    // -------------------------
+    init {
+        notificationListener?.let {
+            ChunkDownloadApi.setNotificationListener(it)
+        }
+    }
 
     fun startDownload(
         url: String,
@@ -71,6 +75,8 @@ class TurboDownloader private constructor(
 
     class Builder(private val activity: Activity, private val context: Context) {
 
+        private var notificationListener:
+                DownloadNotificationListener? = null
         private var threadCount: Int = 4
         private var destinationDir: File? = null
         private var checkPermission: Boolean = false
@@ -90,6 +96,12 @@ class TurboDownloader private constructor(
 
         fun setPermissionChecked(enabled: Boolean) = apply {
             checkPermission = enabled
+        }
+
+        fun setNotificationListener(
+            listener: DownloadNotificationListener
+        ) = apply {
+            notificationListener = listener
         }
 
         fun build(): TurboDownloader {
@@ -114,7 +126,8 @@ class TurboDownloader private constructor(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 destinationDir = dir,
-                showFormatter = showFormatter
+                showFormatter = showFormatter,
+                notificationListener = notificationListener
             )
         }
 

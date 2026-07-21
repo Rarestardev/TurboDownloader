@@ -17,6 +17,7 @@ object NotificationHelper {
     const val ACTION_PAUSE = "ACTION_PAUSE"
     const val ACTION_RESUME = "ACTION_RESUME"
     const val ACTION_CANCEL = "ACTION_CANCEL"
+    const val ACTION_CLICK = "ACTION_CLICK"
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

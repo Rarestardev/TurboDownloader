@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.room.Room
 import com.rarestardev.turbodownloader.core.DownloadManager
+import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.service.DownloadManagerHolder
 import com.rarestardev.turbodownloader.storage.DownloadDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,8 @@ import kotlinx.coroutines.SupervisorJob
 
 @SuppressLint("StaticFieldLeak")
 object ChunkDownloadApi {
+
+    private var listener: DownloadNotificationListener? = null
 
     @Synchronized
     fun get(
@@ -46,5 +49,18 @@ object ChunkDownloadApi {
         }
 
         return DownloadManagerHolder.manager!!
+    }
+
+    fun setNotificationListener(
+        listener: DownloadNotificationListener
+    ) {
+        this.listener = listener
+    }
+
+
+    fun getNotificationListener():
+            DownloadNotificationListener? {
+
+        return listener
     }
 }
