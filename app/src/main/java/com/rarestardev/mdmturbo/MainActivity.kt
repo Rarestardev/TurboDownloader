@@ -86,10 +86,8 @@ class MainActivity : ComponentActivity() {
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
-                val uri =
-                    "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
-
-               /* val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"*/
+//                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
 
                 var downloadId by remember { mutableStateOf(DownloadId("")) }
                 var totalDownload by remember { mutableLongStateOf(-1) }
@@ -114,7 +112,7 @@ class MainActivity : ComponentActivity() {
                             println("Progress : $progress \n , TotalDownload : $totalDownload \n , DownloadBytes : $downloadBytes")
                         }
 
-                        DownloadState.Idle -> { println("idle")}
+                        is DownloadState.Idle -> { println("idle")}
                     }
                 }
 
@@ -222,7 +220,7 @@ fun DownloadItem(
 
     val speed = when(state) {
         is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
-        else -> ""
+        else -> "0 KB"
     }
 
     /*val eta = when(state) {
@@ -263,7 +261,7 @@ fun DownloadItem(
             )
 
             Text(
-                text = "$progress% • ${formatSize(entity.totalBytes)} • $speed",
+                text = "$progress% • ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
                 color = Color.LightGray,
                 fontSize = 12.sp
             )

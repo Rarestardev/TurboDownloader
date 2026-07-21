@@ -98,7 +98,7 @@ class DownloadManager(
                     DownloadProgress(
                         totalBytes = entity.totalBytes,
                         downloadBytes = downloaded,
-                        status = DownloadStatus.PAUSED.name
+                        status = DownloadStatus.PAUSED
                     )
                 )
             )
@@ -157,7 +157,7 @@ class DownloadManager(
                                     downloadBytes = downloaded,
                                     speedBytesPerSec = speed,
                                     remainingTimeMillis = remainTime,
-                                    status = DownloadStatus.RUNNING.name
+                                    status = DownloadStatus.RUNNING
                                 )
                             )
                         )
