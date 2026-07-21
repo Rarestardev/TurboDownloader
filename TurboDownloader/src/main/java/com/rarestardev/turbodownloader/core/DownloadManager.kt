@@ -103,22 +103,40 @@ class DownloadManager(
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
     }
 
-    suspend fun cancel(id: DownloadId) {
-        scope.launch {
+    fun cancel(id: DownloadId) {
+        scope.launch(Dispatchers.IO) {
             jobs[id.value]?.cancel()
-            pauseFlags[id.value] = false
-            dao.updateStatus(id.value, DownloadStatus.CANCELLED.name)
-            update(id, DownloadState.Cancelled(id))
             jobs.remove(id.value)
-        }
-        val entity = dao.getDownload(id.value)
+            pauseFlags[id.value] = false
 
-        entity?.let {
-            File(it.destinationDir, "${it.id}_tmp").deleteRecursively()
-        }
-        stopServiceIfIdle()
+            val entity = dao.getDownload(id.value)
 
-        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "cancel download running.")
+            dao.deleteChunks(id.value)
+            dao.deleteDownload(id.value)
+
+            entity?.let {
+                val tempDir = File(
+                    it.destinationDir,
+                    "${it.id}_tmp"
+                )
+
+                if (tempDir.exists()) {
+                    tempDir.deleteRecursively()
+                }
+            }
+
+            update(
+                id,
+                DownloadState.Cancelled(id)
+            )
+
+            stopServiceIfIdle()
+        }
+
+        Log.w(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "download cancelled and delete file and chunk"
+        )
     }
 
     private fun enqueueInternal(entity: DownloadEntity) {
@@ -226,5 +244,36 @@ class DownloadManager(
 
     fun allDownloads(): Flow<List<DownloadEntity>> {
         return dao.getAllDownloads()
+    }
+
+    fun release() {
+        scope.launch(Dispatchers.IO) {
+            val downloads = dao.getAllDownloadsOnce()
+            downloads.forEach { download ->
+                if (
+                    download.status == DownloadStatus.COMPLETED ||
+                    download.status == DownloadStatus.CANCELLED
+                ) {
+                    val tempDir = File(
+                        download.destinationDir,
+                        "${download.id}_tmp"
+                    )
+
+                    if (tempDir.exists()) {
+                        tempDir.deleteRecursively()
+
+                        Log.d(
+                            TurboConstants.TURBO_DOWNLOADER_LOG,
+                            "deleted ${tempDir.name}"
+                        )
+                    }
+                }
+            }
+
+            Log.d(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "release completed"
+            )
+        }
     }
 }

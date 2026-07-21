@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.state.DownloadId
@@ -60,6 +61,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var downloader: TurboDownloader
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,7 +80,7 @@ class MainActivity : ComponentActivity() {
         )
         dir.mkdirs()
 
-        val downloader = TurboDownloader.Builder(this, this)
+        downloader = TurboDownloader.Builder(this, this)
             .setThread(8)
             .setDir(dir)
             .setPermissionChecked(true)
@@ -158,6 +162,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        downloader.release()
     }
 }
 

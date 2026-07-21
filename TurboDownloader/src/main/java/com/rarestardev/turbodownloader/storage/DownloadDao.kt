@@ -24,6 +24,9 @@ interface DownloadDao {
     suspend fun updateStatus(id: String, status: String)
 
     @Query("SELECT * FROM downloads")
+    suspend fun getAllDownloadsOnce(): List<DownloadEntity>
+
+    @Query("SELECT * FROM downloads")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
 
     @Query("DELETE FROM chunks WHERE downloadId = :id")
