@@ -40,11 +40,9 @@ publishing {
                     components["release"]
                 )
             }
-            groupId = "com.rarestardev"
-            artifactId = "turbodownloader"
-
-            version =
-                "1.0.0"
+            groupId = "com.github.RareStarDev"
+            artifactId = "TurboDownloader"
+            version = "1.0.0"
         }
     }
 }
