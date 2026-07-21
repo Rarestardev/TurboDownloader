@@ -1,12 +1,16 @@
 package com.rarestardev.turbodownloader.core
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
@@ -131,22 +135,42 @@ class TurboDownloader private constructor(
             )
         }
 
-        private fun hasNotificationPermission(activity: Activity): Boolean {
+        private fun hasNotificationPermission(
+            activity: Activity
+        ): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 ActivityCompat.checkSelfPermission(
                     activity,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
-            } else true
+            } else {
+                NotificationManagerCompat
+                    .from(activity)
+                    .areNotificationsEnabled()
+            }
         }
 
-        private fun requestNotificationPermission(activity: Activity) {
+        @SuppressLint("InlinedApi")
+        private fun requestNotificationPermission(
+            activity: Activity
+        ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 ActivityCompat.requestPermissions(
                     activity,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    arrayOf(
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ),
                     100
                 )
+            } else {
+                val intent = Intent().apply {
+                        action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                        putExtra(
+                            Settings.EXTRA_APP_PACKAGE,
+                            activity.packageName
+                        )
+                    }
+                activity.startActivity(intent)
             }
         }
     }
