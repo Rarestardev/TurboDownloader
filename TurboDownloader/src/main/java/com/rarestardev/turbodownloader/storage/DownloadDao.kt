@@ -25,4 +25,11 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
+
+    @Query("DELETE FROM chunks WHERE downloadId = :id")
+    suspend fun deleteChunks(id: String)
+
+
+    @Query("DELETE FROM downloads WHERE id = :id")
+    suspend fun deleteDownload(id: String)
 }
