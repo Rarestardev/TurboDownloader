@@ -111,6 +111,11 @@ class DownloadManager(
 
             val entity = dao.getDownload(id.value)
 
+            update(
+                id,
+                DownloadState.Cancelled(id)
+            )
+
             dao.deleteChunks(id.value)
             dao.deleteDownload(id.value)
 
@@ -124,11 +129,6 @@ class DownloadManager(
                     tempDir.deleteRecursively()
                 }
             }
-
-            update(
-                id,
-                DownloadState.Cancelled(id)
-            )
 
             stopServiceIfIdle()
         }

@@ -20,9 +20,7 @@ class TurboDownloader private constructor(
     private val destinationDir: File,
     private val showFormatter: Boolean
 ) {
-
-    private val api = ChunkDownloadApi(context)
-    private val manager = api.manager
+    private val manager = ChunkDownloadApi.get(context)
 
     // -------------------------
     // PUBLIC API

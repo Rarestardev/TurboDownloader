@@ -33,6 +33,9 @@
             android:name="com.rarestardev.turbodownloader.service.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <receiver android:name="com.rarestardev.turbodownloader.service.DownloadReceiver"
+            android:exported="false"/>
     </application>
 
 </manifest>
