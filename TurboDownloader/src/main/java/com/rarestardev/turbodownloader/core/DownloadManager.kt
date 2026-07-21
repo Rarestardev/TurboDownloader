@@ -33,10 +33,6 @@ class DownloadManager(
     private val downloader = ChunkDownloader(dao)
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
-
-    private val _status = MutableStateFlow(DownloadStatus.IDLE)
-    val status = _status.asStateFlow()
-
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
 
@@ -59,7 +55,6 @@ class DownloadManager(
 
             dao.insertDownload(entity)
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            _status.value = DownloadStatus.RUNNING
             update(id, DownloadState.Queued(id))
 
             enqueueInternal(entity)
@@ -79,7 +74,6 @@ class DownloadManager(
             enqueueInternal(entity)
         }
         jobs[id.value] = job
-        _status.value = DownloadStatus.RUNNING
         Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
     }
 
@@ -87,7 +81,6 @@ class DownloadManager(
         pauseFlags[id.value] = true
         scope.launch(Dispatchers.IO) {
             dao.updateStatus(id.value, DownloadStatus.PAUSED.name)
-            _status.value = DownloadStatus.PAUSED
             val entity = dao.getDownload(id.value) ?: return@launch
             val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
             /*update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))*/
@@ -112,7 +105,6 @@ class DownloadManager(
             jobs[id.value]?.cancel()
             pauseFlags[id.value] = false
             dao.updateStatus(id.value, DownloadStatus.CANCELLED.name)
-            _status.value = DownloadStatus.CANCELLED
             update(id, DownloadState.Cancelled(id))
             jobs.remove(id.value)
         }
@@ -175,13 +167,11 @@ class DownloadManager(
                 }
 
                 dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
-                _status.value = DownloadStatus.COMPLETED
                 update(id, DownloadState.Completed(id, file))
 
                 Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "enqueueInternal")
             } catch (e: Exception) {
                 dao.updateStatus(id.value, DownloadStatus.FAILED.name)
-                _status.value = DownloadStatus.FAILED
                 update(id, DownloadState.Failed(id, e))
             } finally {
                 jobs.remove(id.value)
