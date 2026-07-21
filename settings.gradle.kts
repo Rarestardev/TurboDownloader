@@ -1,10 +1,7 @@
 pluginManagement {
     repositories {
 
-        maven {
-            url = uri("https://jitpack.io")
-            content { includeGroup ("com.github.Rarestardev") }
-        }
+        maven { url = uri("https://jitpack.io") }
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -22,10 +19,7 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven {
-            url = uri("https://jitpack.io")
-            content { excludeGroupByRegex("com\\.github.Rarestardev.*") }
-        }
+        maven { url = uri("https://jitpack.io") }
         google()
         mavenCentral()
     }
@@ -34,3 +28,4 @@ dependencyResolutionManagement {
 rootProject.name = "TurboDownloader"
 include(":app")
 include(":turbodownloader")
+project(":turbodownloader").projectDir = file("TurboDownloader")
