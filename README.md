@@ -1,10 +1,12 @@
-# 🚀 TurboDownloader     [![](https://jitpack.io/v/RareStarDev/TurboDownloader.svg)](https://jitpack.io/#RareStarDev/TurboDownloader)
+# 🚀 TurboDownloader
 
 A fast, lightweight and powerful multi-thread download manager for Android written in Kotlin.
 
 TurboDownloader supports resumable downloads, foreground service, download notifications, Room persistence, and an easy-to-use Builder API.
 
 ---
+
+[![](https://jitpack.io/v/RareStarDev/TurboDownloader.svg)](https://jitpack.io/#RareStarDev/TurboDownloader)
 
 ## ✨ Features
 
