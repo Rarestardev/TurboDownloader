@@ -1,6 +1,5 @@
 package com.rarestardev.mdmturbo
 
-import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -44,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.ActivityCompat
 import com.rarestardev.mdmturbo.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
@@ -62,12 +60,6 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-            100
-        )
 
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
