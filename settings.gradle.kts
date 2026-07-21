@@ -1,7 +1,10 @@
 pluginManagement {
     repositories {
 
-        maven { url = uri("https://jitpack.io") }
+        maven {
+            url = uri("https://jitpack.io")
+            content { includeGroup ("com.github.Rarestardev") }
+        }
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -19,7 +22,10 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven { url = uri("https://jitpack.io") }
+        maven {
+            url = uri("https://jitpack.io")
+            content { excludeGroupByRegex("com\\.github.Rarestardev.*") }
+        }
         google()
         mavenCentral()
     }
