@@ -40,39 +40,34 @@ class TurboDownloader private constructor(
         val maxRetries = 5
         val delayMs = 5000L
 
-        if (hasNotificationPermission()) {
-            for (attempt in 1..maxRetries) {
-                if (isInternetAvailable()) {
-                    connectionListener?.onInternetAvailable()
-                    val request = DownloadRequest(
-                        uri = url,
-                        fileName = finalName,
-                        threadCount = threadCount,
-                        autoThreading = autoThreading
-                    )
-                    return manager.enqueue(request)
-                }
-                Log.w(
-                    TurboConstants.TURBO_DOWNLOADER_LOG,
-                    "No internet (attempt $attempt/$maxRetries)"
+        for (attempt in 1..maxRetries) {
+            if (isInternetAvailable()) {
+                connectionListener?.onInternetAvailable()
+                val request = DownloadRequest(
+                    uri = url,
+                    fileName = finalName,
+                    threadCount = threadCount,
+                    autoThreading = autoThreading
                 )
-
-                if (attempt == maxRetries) {
-                    Log.e(
-                        TurboConstants.TURBO_DOWNLOADER_LOG,
-                        "Download failed: no internet after $maxRetries"
-                    )
-                    connectionListener?.onInternetFailed()
-                    return null
-                }
-
-                connectionListener?.onRetry(attempt, maxRetries, delayMs)
-
-                delay(delayMs)
+                return manager.enqueue(request)
             }
-        } else {
-            Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Post notification permission needs!")
-            throw IllegalArgumentException("Post notification permission needs!")
+            Log.w(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "No internet (attempt $attempt/$maxRetries)"
+            )
+
+            if (attempt == maxRetries) {
+                Log.e(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Download failed: no internet after $maxRetries"
+                )
+                connectionListener?.onInternetFailed()
+                return null
+            }
+
+            connectionListener?.onRetry(attempt, maxRetries, delayMs)
+
+            delay(delayMs)
         }
         return null
     }
@@ -124,7 +119,7 @@ class TurboDownloader private constructor(
         }
     }
 
-    private fun hasNotificationPermission(): Boolean {
+    fun hasNotificationPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ActivityCompat.checkSelfPermission(
                 context,

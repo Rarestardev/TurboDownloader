@@ -1,7 +1,10 @@
 package com.rarestardev.sample
 
+import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -34,14 +37,19 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import com.rarestardev.sample.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
@@ -70,29 +78,6 @@ class MainActivity : ComponentActivity() {
             .setThread(8)
 //            .setDir(dir)
             .setAutoThreading(true)
-            .setNotificationListener(object : DownloadNotificationListener {
-                override fun onNotificationClick(downloadId: DownloadId) {
-                    println("click")
-                }
-            })
-            .setNetworkConnectionListener(object : NetworkConnectionListener {
-                override fun onRetry(
-                    attempt: Int,
-                    maxRetries: Int,
-                    delayMs: Long
-                ) {
-                    println("تلاش $attempt از $maxRetries – اینترنت قطع است")
-                }
-
-                override fun onInternetAvailable() {
-                    println("اینترنت وصل شد، دانلود شروع می‌شود...")
-                }
-
-                override fun onInternetFailed() {
-                    println("دانلود ناموفق: اتصال برقرار نشد")
-                }
-
-            })
             .build()
 
         enableEdgeToEdge()
@@ -102,10 +87,44 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+                val sampleUri = "https://speed.hetzner.de/1MB.bin"
+                var hasPermission by remember { mutableStateOf(false) }
 
-//                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
-                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
-//                val uri = "https://cdn021.ronakfilm.com/TJhCciVE/nGfBGlGH/vDZ77P9u/Passenger.2026.4K.mp4"
+                downloader.setNotificationListener(object : DownloadNotificationListener {
+                    override fun onNotificationClick(downloadId: DownloadId) {
+                        val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
+                            setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                            setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+
+                        startActivity(intent)
+                    }
+                })
+
+                downloader.setNetworkConnectionListener(
+                    object : NetworkConnectionListener {
+                        override fun onRetry(
+                            attempt: Int,
+                            maxRetries: Int,
+                            delayMs: Long
+                        ) {
+                            println("تلاش $attempt از $maxRetries – اینترنت قطع است")
+                        }
+
+                        override fun onInternetAvailable() {
+                            println("اینترنت وصل شد، دانلود شروع می‌شود...")
+                        }
+
+                        override fun onInternetFailed() {
+                            println("دانلود ناموفق: اتصال برقرار نشد")
+                        }
+
+                    }
+                )
+
+                LaunchedEffect(downloader.hasNotificationPermission()) {
+                    hasPermission = downloader.hasNotificationPermission()
+                }
 
                 Column(
                     modifier = Modifier
@@ -118,7 +137,30 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
-                            scope.launch { downloader.startDownload(uri) }
+                            scope.launch {
+                                if (hasPermission) {
+                                    downloader.startDownload(sampleUri)
+                                } else {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        ActivityCompat.requestPermissions(
+                                            this@MainActivity,
+                                            arrayOf(
+                                                Manifest.permission.POST_NOTIFICATIONS
+                                            ),
+                                            100
+                                        )
+                                    } else {
+                                        val intent = Intent().apply {
+                                            action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                            putExtra(
+                                                Settings.EXTRA_APP_PACKAGE,
+                                                packageName
+                                            )
+                                        }
+                                        startActivity(intent)
+                                    }
+                                }
+                            }
                         },
                         modifier = Modifier.statusBarsPadding()
                     ) {
