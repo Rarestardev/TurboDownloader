@@ -25,6 +25,7 @@ class TurboDownloader private constructor(
     private val threadCount: Int,
     private val destinationDir: File,
     private val showFormatter: Boolean,
+    private val autoThreading: Boolean,
     private val notificationListener: DownloadNotificationListener?
 ) {
     private val manager = ChunkDownloadApi.get(context)
@@ -45,7 +46,8 @@ class TurboDownloader private constructor(
         val request = DownloadRequest(
             uri = url,
             fileName = finalName,
-            threadCount = threadCount
+            threadCount = threadCount,
+            autoThreading = autoThreading
         )
         return manager.enqueue(request)
     }
@@ -85,6 +87,11 @@ class TurboDownloader private constructor(
         private var destinationDir: File? = null
         private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
+        private var autoThreading: Boolean = false
+
+        fun setAutoThreading(enabled: Boolean) = apply {
+            autoThreading = enabled
+        }
 
         fun setShowFormatter(enabled: Boolean) = apply {
             showFormatter = enabled
@@ -131,7 +138,8 @@ class TurboDownloader private constructor(
                 threadCount = threadCount,
                 destinationDir = dir,
                 showFormatter = showFormatter,
-                notificationListener = notificationListener
+                notificationListener = notificationListener,
+                autoThreading = autoThreading
             )
         }
 

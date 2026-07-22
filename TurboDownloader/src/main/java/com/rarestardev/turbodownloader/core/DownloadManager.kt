@@ -43,15 +43,25 @@ class DownloadManager(
         val job = scope.launch(Dispatchers.IO) {
             val totalSize = downloader.getFileSize(request.uri)
 
+            val actualThreadCount = if (request.autoThreading && totalSize > 0) {
+                computeAutoThreadCount(totalSize)
+            } else {
+                request.threadCount
+            }
+
             val entity = DownloadEntity(
                 id = id.value,
                 url = request.uri,
                 fileName = request.fileName,
                 totalBytes = totalSize,
-                chunkCount = request.threadCount,
+                chunkCount = actualThreadCount,
                 status = DownloadStatus.QUEUED
             )
 
+            Log.d(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "Used thread for downloads  = ThreadCount : $actualThreadCount , FileSize : $totalSize"
+            )
             dao.insertDownload(entity)
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
             update(id, DownloadState.Queued(id))
@@ -248,5 +258,18 @@ class DownloadManager(
             TurboConstants.TURBO_DOWNLOADER_LOG,
             "release completed"
         )
+    }
+
+    private fun computeAutoThreadCount(fileSizeBytes: Long): Int {
+        val mb = fileSizeBytes / (1024 * 1024)
+        return when {
+            mb < 50 -> 1
+            mb < 100 -> 2
+            mb < 200 -> 4
+            mb < 800 -> 6
+            mb < 1000 -> 8
+            mb < 2000 -> 12
+            else -> 16
+        }
     }
 }
