@@ -17,13 +17,12 @@ import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
-import java.io.File
 
 class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
-    private val destinationDir: File,
     private val showFormatter: Boolean,
+    private val autoThreading: Boolean,
     private val notificationListener: DownloadNotificationListener?
 ) {
     private val manager = ChunkDownloadApi.get(context)
@@ -44,8 +43,8 @@ class TurboDownloader private constructor(
         val request = DownloadRequest(
             uri = url,
             fileName = finalName,
-            destinationDir = destinationDir,
-            threadCount = threadCount
+            threadCount = threadCount,
+            autoThreading = autoThreading
         )
         return manager.enqueue(request)
     }
@@ -82,9 +81,13 @@ class TurboDownloader private constructor(
         private var notificationListener:
                 DownloadNotificationListener? = null
         private var threadCount: Int = 4
-        private var destinationDir: File? = null
         private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
+        private var autoThreading: Boolean = false
+
+        fun setAutoThreading(enabled: Boolean) = apply {
+            autoThreading = enabled
+        }
 
         fun setShowFormatter(enabled: Boolean) = apply {
             showFormatter = enabled
@@ -92,10 +95,6 @@ class TurboDownloader private constructor(
 
         fun setThread(count: Int) = apply {
             threadCount = count
-        }
-
-        fun setDir(dir: File) = apply {
-            destinationDir = dir
         }
 
         fun setPermissionChecked(enabled: Boolean) = apply {
@@ -109,10 +108,6 @@ class TurboDownloader private constructor(
         }
 
         fun build(): TurboDownloader {
-
-            val dir = destinationDir
-                ?: throw IllegalStateException("Destination directory is required")
-
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
 
@@ -129,9 +124,9 @@ class TurboDownloader private constructor(
             return TurboDownloader(
                 context = context.applicationContext,
                 threadCount = threadCount,
-                destinationDir = dir,
                 showFormatter = showFormatter,
-                notificationListener = notificationListener
+                notificationListener = notificationListener,
+                autoThreading = autoThreading
             )
         }
 
@@ -164,12 +159,12 @@ class TurboDownloader private constructor(
                 )
             } else {
                 val intent = Intent().apply {
-                        action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                        putExtra(
-                            Settings.EXTRA_APP_PACKAGE,
-                            activity.packageName
-                        )
-                    }
+                    action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                    putExtra(
+                        Settings.EXTRA_APP_PACKAGE,
+                        activity.packageName
+                    )
+                }
                 activity.startActivity(intent)
             }
         }

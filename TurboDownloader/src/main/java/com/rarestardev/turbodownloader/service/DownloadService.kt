@@ -69,11 +69,6 @@ class DownloadService : Service() {
 
                     when (state) {
                         is DownloadState.Running -> {
-                            Log.d(
-                                TurboConstants.TURBO_DOWNLOADER_LOG,
-                                "show download notification ${id.value}"
-                            )
-
                             nm.notify(
                                 notificationId(id),
                                 NotificationHelper.create(

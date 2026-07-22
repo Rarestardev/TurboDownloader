@@ -30,7 +30,7 @@ class DownloadManager(
     private val scope: CoroutineScope,
     private val context: Context
 ) {
-    private val downloader = ChunkDownloader(dao)
+    private val downloader = ChunkDownloader(dao, context)
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
     private val pauseFlags = mutableMapOf<String, Boolean>()
@@ -43,16 +43,25 @@ class DownloadManager(
         val job = scope.launch(Dispatchers.IO) {
             val totalSize = downloader.getFileSize(request.uri)
 
+            val actualThreadCount = if (request.autoThreading && totalSize > 0) {
+                computeAutoThreadCount(totalSize)
+            } else {
+                request.threadCount
+            }
+
             val entity = DownloadEntity(
                 id = id.value,
                 url = request.uri,
                 fileName = request.fileName,
-                destinationDir = request.destinationDir.absolutePath,
                 totalBytes = totalSize,
-                chunkCount = request.threadCount,
+                chunkCount = actualThreadCount,
                 status = DownloadStatus.QUEUED
             )
 
+            Log.d(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "Used thread for downloads  = ThreadCount : $actualThreadCount , FileSize : $totalSize"
+            )
             dao.insertDownload(entity)
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
             update(id, DownloadState.Queued(id))
@@ -109,8 +118,6 @@ class DownloadManager(
             jobs.remove(id.value)
             pauseFlags[id.value] = false
 
-            val entity = dao.getDownload(id.value)
-
             update(
                 id,
                 DownloadState.Cancelled(id)
@@ -119,16 +126,8 @@ class DownloadManager(
             dao.deleteChunks(id.value)
             dao.deleteDownload(id.value)
 
-            entity?.let {
-                val tempDir = File(
-                    it.destinationDir,
-                    "${it.id}_tmp"
-                )
-
-                if (tempDir.exists()) {
-                    tempDir.deleteRecursively()
-                }
-            }
+            val tempDir = File(context.cacheDir, "${id.value}_tmp")
+            if (tempDir.exists()) tempDir.deleteRecursively()
 
             stopServiceIfIdle()
         }
@@ -154,7 +153,7 @@ class DownloadManager(
                 )
 
 
-                val file = downloader.download(entity, { chunkBytes ->
+                val file = downloader.download(entity, onProgress = { chunkBytes ->
                     downloaded += chunkBytes
 
                     val now = System.currentTimeMillis()
@@ -203,10 +202,8 @@ class DownloadManager(
                 jobs.remove(id.value)
 
                 if (pauseFlags[id.value] != true) {
-                    val tempDir = File(entity.destinationDir, "${entity.id}_tmp")
-                    if (tempDir.exists()) {
-                        tempDir.deleteRecursively()
-                    }
+                    val tempDir = File(context.cacheDir, "${id.value}_tmp")
+                    if (tempDir.exists()) tempDir.deleteRecursively()
                 }
             }
         }
@@ -250,30 +247,29 @@ class DownloadManager(
         scope.launch(Dispatchers.IO) {
             val downloads = dao.getAllDownloadsOnce()
             downloads.forEach { download ->
-                if (
-                    download.status == DownloadStatus.COMPLETED ||
-                    download.status == DownloadStatus.CANCELLED
-                ) {
-                    val tempDir = File(
-                        download.destinationDir,
-                        "${download.id}_tmp"
-                    )
-
-                    if (tempDir.exists()) {
-                        tempDir.deleteRecursively()
-
-                        Log.d(
-                            TurboConstants.TURBO_DOWNLOADER_LOG,
-                            "deleted ${tempDir.name}"
-                        )
-                    }
+                if (download.status == DownloadStatus.COMPLETED || download.status == DownloadStatus.CANCELLED) {
+                    val tempDir = File(context.cacheDir, "${download.id}_tmp")
+                    if (tempDir.exists()) tempDir.deleteRecursively()
                 }
             }
+        }
 
-            Log.d(
-                TurboConstants.TURBO_DOWNLOADER_LOG,
-                "release completed"
-            )
+        Log.d(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "release completed"
+        )
+    }
+
+    private fun computeAutoThreadCount(fileSizeBytes: Long): Int {
+        val mb = fileSizeBytes / (1024 * 1024)
+        return when {
+            mb < 50 -> 1
+            mb < 100 -> 2
+            mb < 200 -> 4
+            mb < 800 -> 6
+            mb < 1000 -> 8
+            mb < 2000 -> 12
+            else -> 16
         }
     }
 }

@@ -1,7 +1,7 @@
 package com.rarestardev.turbodownloader.state
 
+import android.net.Uri
 import com.rarestardev.turbodownloader.model.DownloadProgress
-import java.io.File
 
 @JvmInline
 value class DownloadId(val value: String)
@@ -25,7 +25,7 @@ sealed class DownloadState {
 
     data class Completed(
         val id: DownloadId,
-        val file: File,
+        val fileUri: Uri?,
         val status: DownloadStatus = DownloadStatus.COMPLETED
     ) : DownloadState()
 

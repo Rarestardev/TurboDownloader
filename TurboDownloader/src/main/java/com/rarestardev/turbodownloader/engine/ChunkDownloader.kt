@@ -1,8 +1,11 @@
 package com.rarestardev.turbodownloader.engine
 
+import android.content.Context
+import android.net.Uri
 import com.rarestardev.turbodownloader.storage.ChunkEntity
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
+import com.rarestardev.turbodownloader.utils.MergeChunksHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -14,6 +17,7 @@ import java.io.FileOutputStream
 
 class ChunkDownloader(
     private val dao: DownloadDao,
+    private val context: Context,
     private val client: OkHttpClient = OkHttpClient()
 ) {
 
@@ -26,14 +30,15 @@ class ChunkDownloader(
 
     suspend fun download(
         download: DownloadEntity,
+        mimeType: String = "*/*",
         onProgress: (Long) -> Unit,
         isPaused: () -> Boolean
-    ): File {
+    ): Uri? {
         val chunks = dao.getChunks(download.id).ifEmpty {
             createChunks(download)
         }
 
-        val tempDir = File(download.destinationDir, "${download.id}_tmp")
+        val tempDir = File(context.cacheDir, "${download.id}_tmp")
         tempDir.mkdirs()
 
 
@@ -48,12 +53,16 @@ class ChunkDownloader(
         val latestChunks = dao.getChunks(download.id)
 
         if (latestChunks.any { !it.isCompleted }) {
-            return File("")
+            return null
         }
 
-        val outputFile = File(download.destinationDir, download.fileName)
-        mergeChunks(chunks, tempDir, outputFile)
-        tempDir.deleteRecursively()
+        val outputFile = MergeChunksHelper.mergeChunkToDownloads(
+            context = context,
+            chunks = latestChunks,
+            tempDir = tempDir,
+            finalFileName = download.fileName,
+            mimeType = mimeType
+        )
 
         return outputFile
     }
@@ -133,18 +142,5 @@ class ChunkDownloader(
         }
 
         dao.insertChunk(current.copy(isCompleted = true))
-    }
-
-    private fun mergeChunks(chunks: List<ChunkEntity>, tempDir: File, outputFile: File) {
-        outputFile.outputStream().use { output ->
-            chunks.sortedBy { it.index }.forEach { chunk ->
-                val chunkFile = File(tempDir, "chunk_${chunk.index}.part")
-                chunkFile.inputStream().use { input ->
-                    input.copyTo(output)
-                }
-                chunkFile.delete()
-            }
-        }
-        tempDir.deleteRecursively()
     }
 }
