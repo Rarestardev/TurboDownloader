@@ -24,17 +24,11 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val showFormatter: Boolean,
-    private val autoThreading: Boolean,
-    private val notificationListener: DownloadNotificationListener?,
-    private val connectionListener: NetworkConnectionListener?
+    private val autoThreading: Boolean
 ) {
     private val manager = ChunkDownloadApi.get(context)
-
-    init {
-        notificationListener?.let {
-            ChunkDownloadApi.setNotificationListener(it)
-        }
-    }
+    private var notificationListener: DownloadNotificationListener? = null
+    private var connectionListener: NetworkConnectionListener? = null
 
     suspend fun startDownload(
         url: String,
@@ -106,6 +100,15 @@ class TurboDownloader private constructor(
         }
     }
 
+    fun setNotificationListener(listener: DownloadNotificationListener) {
+        this.notificationListener = listener
+        ChunkDownloadApi.setNotificationListener(listener)
+    }
+
+    fun setNetworkConnectionListener(listener: NetworkConnectionListener){
+        this.connectionListener = listener
+    }
+
     private fun extractExtension(url: String): String {
         return url.substringAfterLast('.', "").substringBefore('?')
     }
@@ -135,15 +138,9 @@ class TurboDownloader private constructor(
     }
 
     class Builder(private val context: Context) {
-        private var notificationListener: DownloadNotificationListener? = null
-        private var networkConnectionListener: NetworkConnectionListener? = null
         private var threadCount: Int = 4
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
-
-        fun setNetworkConnectionListener(listener: NetworkConnectionListener) = apply {
-            networkConnectionListener = listener
-        }
 
         fun setAutoThreading(enabled: Boolean) = apply {
             autoThreading = enabled
@@ -157,12 +154,6 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
-        fun setNotificationListener(
-            listener: DownloadNotificationListener
-        ) = apply {
-            notificationListener = listener
-        }
-
         fun build(): TurboDownloader {
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
@@ -174,9 +165,7 @@ class TurboDownloader private constructor(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 showFormatter = showFormatter,
-                notificationListener = notificationListener,
-                autoThreading = autoThreading,
-                connectionListener = networkConnectionListener
+                autoThreading = autoThreading
             )
         }
     }
