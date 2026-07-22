@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
@@ -111,7 +112,7 @@ class TurboDownloader private constructor(
         fun build(): TurboDownloader {
 
             val dir = destinationDir
-                ?: throw IllegalStateException("Destination directory is required")
+                ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
@@ -164,12 +165,12 @@ class TurboDownloader private constructor(
                 )
             } else {
                 val intent = Intent().apply {
-                        action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                        putExtra(
-                            Settings.EXTRA_APP_PACKAGE,
-                            activity.packageName
-                        )
-                    }
+                    action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                    putExtra(
+                        Settings.EXTRA_APP_PACKAGE,
+                        activity.packageName
+                    )
+                }
                 activity.startActivity(intent)
             }
         }
