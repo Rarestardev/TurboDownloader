@@ -45,7 +45,6 @@ class TurboDownloader private constructor(
         val request = DownloadRequest(
             uri = url,
             fileName = finalName,
-            destinationDir = destinationDir,
             threadCount = threadCount
         )
         return manager.enqueue(request)

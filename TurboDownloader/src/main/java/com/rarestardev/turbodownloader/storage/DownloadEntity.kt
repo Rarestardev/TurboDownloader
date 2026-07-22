@@ -9,7 +9,6 @@ data class DownloadEntity(
     @PrimaryKey val id: String,
     val url: String,
     val fileName: String,
-    val destinationDir: String,
     val totalBytes: Long,
     val chunkCount: Int,
     val status: DownloadStatus
