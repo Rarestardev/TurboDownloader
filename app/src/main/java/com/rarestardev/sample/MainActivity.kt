@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
             .setThread(8)
             .setDir(dir)
             .setPermissionChecked(true)
-            .setNotificationListener(object : DownloadNotificationListener{
+            .setNotificationListener(object : DownloadNotificationListener {
                 override fun onNotificationClick(downloadId: DownloadId) {
                     println("click")
                 }
@@ -99,7 +99,8 @@ class MainActivity : ComponentActivity() {
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
-                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+                val uri =
+                    "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
 //                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
 
                 Column(
@@ -176,6 +177,11 @@ fun DownloadItem(
         else -> 0
     }
 
+    val downloaded = when (state) {
+        is DownloadState.Running -> state.progress.downloadBytes
+        else -> 0L
+    }
+
     val speed = when (state) {
         is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
         else -> "0 KB"
@@ -215,10 +221,8 @@ fun DownloadItem(
                     .padding(vertical = 6.dp)
             )
 
-//            ${formatSize(downloadBytes)}
-
             Text(
-                text = "$progress% •  ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
+                text = "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
                 color = Color.LightGray,
                 fontSize = 12.sp
             )
