@@ -29,6 +29,10 @@ object MergeChunksHelper {
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
                 put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 put(MediaStore.Downloads.IS_PENDING, 1)
+
+                val nowSeconds = System.currentTimeMillis() / 1000
+                put(MediaStore.Downloads.DATE_ADDED, nowSeconds)
+                put(MediaStore.Downloads.DATE_MODIFIED, nowSeconds)
             }
 
             val resolver = context.contentResolver
@@ -48,6 +52,9 @@ object MergeChunksHelper {
 
                     contentValue.clear()
                     contentValue.put(MediaStore.Downloads.IS_PENDING, 0)
+                    val finalNowSeconds = System.currentTimeMillis() / 1000
+                    contentValue.put(MediaStore.Downloads.DATE_MODIFIED, finalNowSeconds)
+
                     resolver.update(uri, contentValue, null, null)
                     return uri
                 } catch (e: Exception) {
@@ -87,6 +94,7 @@ object MergeChunksHelper {
                 val values = ContentValues().apply {
                     put(MediaStore.Files.FileColumns.DATA, outputFile.absolutePath)
                     put(MediaStore.Files.FileColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.Files.FileColumns.DATE_MODIFIED, System.currentTimeMillis() / 1000)
                 }
                 val uri = context.contentResolver.insert(
                     MediaStore.Files.getContentUri("external"), values
