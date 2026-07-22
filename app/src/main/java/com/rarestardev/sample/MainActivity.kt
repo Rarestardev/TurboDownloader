@@ -2,7 +2,6 @@ package com.rarestardev.sample
 
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -51,7 +50,6 @@ import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadStatus
 import com.rarestardev.turbodownloader.storage.DownloadEntity
 import kotlinx.coroutines.launch
-import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -61,15 +59,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val dir = File(
+        /*val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             "MDM Turbo"
         )
-        dir.mkdirs()
+        dir.mkdirs()*/
 
         downloader = TurboDownloader.Builder(this, this)
             .setThread(8)
-            .setDir(dir)
+//            .setDir(dir)
             .setAutoThreading(true)
             .setPermissionChecked(true)
             .setNotificationListener(object : DownloadNotificationListener {
@@ -100,8 +98,8 @@ class MainActivity : ComponentActivity() {
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 
-                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
-//                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
+//                val uri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+                val uri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4"
 
                 Column(
                     modifier = Modifier

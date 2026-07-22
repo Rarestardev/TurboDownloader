@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
@@ -18,12 +17,10 @@ import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
-import java.io.File
 
 class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
-    private val destinationDir: File,
     private val showFormatter: Boolean,
     private val autoThreading: Boolean,
     private val notificationListener: DownloadNotificationListener?
@@ -84,7 +81,6 @@ class TurboDownloader private constructor(
         private var notificationListener:
                 DownloadNotificationListener? = null
         private var threadCount: Int = 4
-        private var destinationDir: File? = null
         private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
@@ -101,10 +97,6 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
-        fun setDir(dir: File) = apply {
-            destinationDir = dir
-        }
-
         fun setPermissionChecked(enabled: Boolean) = apply {
             checkPermission = enabled
         }
@@ -116,10 +108,6 @@ class TurboDownloader private constructor(
         }
 
         fun build(): TurboDownloader {
-
-            val dir = destinationDir
-                ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
 
@@ -136,7 +124,6 @@ class TurboDownloader private constructor(
             return TurboDownloader(
                 context = context.applicationContext,
                 threadCount = threadCount,
-                destinationDir = dir,
                 showFormatter = showFormatter,
                 notificationListener = notificationListener,
                 autoThreading = autoThreading
