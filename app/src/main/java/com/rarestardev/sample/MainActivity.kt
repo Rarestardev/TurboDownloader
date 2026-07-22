@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.rarestardev.sample.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
+import com.rarestardev.turbodownloader.listener.NetworkConnectionListener
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadStatus
@@ -88,6 +89,24 @@ class MainActivity : ComponentActivity() {
                 }
 
             })
+            .setNetworkConnectionListener(object : NetworkConnectionListener {
+                override fun onRetry(
+                    attempt: Int,
+                    maxRetries: Int,
+                    delayMs: Long
+                ) {
+                    println("تلاش $attempt از $maxRetries – اینترنت قطع است")
+                }
+
+                override fun onInternetAvailable() {
+                    println("اینترنت وصل شد، دانلود شروع می‌شود...")
+                }
+
+                override fun onInternetFailed() {
+                    println("دانلود ناموفق: اتصال برقرار نشد")
+                }
+
+            })
             .build()
 
         enableEdgeToEdge()
@@ -112,7 +131,7 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
-                            downloader.startDownload(uri)
+                            scope.launch { downloader.startDownload(uri) }
                         },
                         modifier = Modifier.statusBarsPadding()
                     ) {

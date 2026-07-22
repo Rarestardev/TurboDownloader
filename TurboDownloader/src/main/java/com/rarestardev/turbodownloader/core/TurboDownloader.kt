@@ -13,17 +13,24 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
+import com.rarestardev.turbodownloader.listener.NetworkConnectionListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val showFormatter: Boolean,
     private val autoThreading: Boolean,
-    private val notificationListener: DownloadNotificationListener?
+    private val notificationListener: DownloadNotificationListener?,
+    private val connectionListener: NetworkConnectionListener?
 ) {
     private val manager = ChunkDownloadApi.get(context)
 
@@ -33,20 +40,43 @@ class TurboDownloader private constructor(
         }
     }
 
-    fun startDownload(
+    suspend fun startDownload(
         url: String,
         fileName: String? = null
-    ): DownloadId {
+    ): DownloadId? {
         val ext = extractExtension(url)
         val finalName = fileName ?: "file_${System.currentTimeMillis()}.$ext"
 
-        val request = DownloadRequest(
-            uri = url,
-            fileName = finalName,
-            threadCount = threadCount,
-            autoThreading = autoThreading
-        )
-        return manager.enqueue(request)
+        val maxRetries = 5
+        val delayMs = 5000L
+
+        for (attempt in 1..maxRetries) {
+            if (isInternetAvailable()) {
+                connectionListener?.onInternetAvailable()
+                val request = DownloadRequest(
+                    uri = url,
+                    fileName = finalName,
+                    threadCount = threadCount,
+                    autoThreading = autoThreading
+                )
+                return manager.enqueue(request)
+            }
+            Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "No internet (attempt $attempt/$maxRetries)")
+
+            if (attempt == maxRetries) {
+                Log.e(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Download failed: no internet after $maxRetries"
+                )
+                connectionListener?.onInternetFailed()
+                return null
+            }
+
+            connectionListener?.onRetry(attempt, maxRetries, delayMs)
+
+            delay(delayMs)
+        }
+        return null
     }
 
     fun pause(id: DownloadId) = manager.pause(id)
@@ -76,14 +106,28 @@ class TurboDownloader private constructor(
         return url.substringAfterLast('.', "").substringBefore('?')
     }
 
-    class Builder(private val activity: Activity, private val context: Context) {
+    private suspend fun isInternetAvailable(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val socket = Socket()
+            socket.connect(InetSocketAddress("8.8.8.8", 53), 3000)
+            socket.close()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
-        private var notificationListener:
-                DownloadNotificationListener? = null
+    class Builder(private val activity: Activity, private val context: Context) {
+        private var notificationListener: DownloadNotificationListener? = null
+        private var networkConnectionListener: NetworkConnectionListener? = null
         private var threadCount: Int = 4
         private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
+
+        fun setNetworkConnectionListener(listener: NetworkConnectionListener) = apply {
+            networkConnectionListener = listener
+        }
 
         fun setAutoThreading(enabled: Boolean) = apply {
             autoThreading = enabled
@@ -126,7 +170,8 @@ class TurboDownloader private constructor(
                 threadCount = threadCount,
                 showFormatter = showFormatter,
                 notificationListener = notificationListener,
-                autoThreading = autoThreading
+                autoThreading = autoThreading,
+                connectionListener = networkConnectionListener
             )
         }
 
