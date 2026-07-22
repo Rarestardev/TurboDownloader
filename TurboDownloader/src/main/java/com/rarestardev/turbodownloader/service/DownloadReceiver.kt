@@ -5,10 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
-import com.rarestardev.turbodownloader.service.NotificationHelper.ACTION_CANCEL
 import com.rarestardev.turbodownloader.service.NotificationHelper.ACTION_CLICK
-import com.rarestardev.turbodownloader.service.NotificationHelper.ACTION_PAUSE
-import com.rarestardev.turbodownloader.service.NotificationHelper.ACTION_RESUME
 import com.rarestardev.turbodownloader.state.DownloadId
 
 class DownloadReceiver : BroadcastReceiver() {
@@ -41,34 +38,11 @@ class DownloadReceiver : BroadcastReceiver() {
             serviceIntent
         )
 
-        when(intent.action) {
-            ACTION_CLICK -> {
-                ChunkDownloadApi
-                    .getNotificationListener()
-                    ?.onNotificationClick(DownloadId(downloadId))
+        if (intent.action == ACTION_CLICK) {
+            ChunkDownloadApi
+                .getNotificationListener()
+                ?.onNotificationClick(DownloadId(downloadId))
 
-            }
-
-            ACTION_PAUSE -> {
-                ChunkDownloadApi
-                    .getNotificationListener()
-                    ?.onPauseClick(DownloadId(downloadId))
-
-            }
-
-            ACTION_RESUME -> {
-                ChunkDownloadApi
-                    .getNotificationListener()
-                    ?.onResumeClick(DownloadId(downloadId))
-
-            }
-
-            ACTION_CANCEL -> {
-                ChunkDownloadApi
-                    .getNotificationListener()
-                    ?.onCancelClick(DownloadId(downloadId))
-
-            }
         }
     }
 }

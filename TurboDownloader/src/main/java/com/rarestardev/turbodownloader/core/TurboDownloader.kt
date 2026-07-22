@@ -1,13 +1,9 @@
 package com.rarestardev.turbodownloader.core
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -28,17 +24,11 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val showFormatter: Boolean,
-    private val autoThreading: Boolean,
-    private val notificationListener: DownloadNotificationListener?,
-    private val connectionListener: NetworkConnectionListener?
+    private val autoThreading: Boolean
 ) {
     private val manager = ChunkDownloadApi.get(context)
-
-    init {
-        notificationListener?.let {
-            ChunkDownloadApi.setNotificationListener(it)
-        }
-    }
+    private var notificationListener: DownloadNotificationListener? = null
+    private var connectionListener: NetworkConnectionListener? = null
 
     suspend fun startDownload(
         url: String,
@@ -61,7 +51,10 @@ class TurboDownloader private constructor(
                 )
                 return manager.enqueue(request)
             }
-            Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "No internet (attempt $attempt/$maxRetries)")
+            Log.w(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "No internet (attempt $attempt/$maxRetries)"
+            )
 
             if (attempt == maxRetries) {
                 Log.e(
@@ -102,6 +95,15 @@ class TurboDownloader private constructor(
         }
     }
 
+    fun setNotificationListener(listener: DownloadNotificationListener) {
+        this.notificationListener = listener
+        ChunkDownloadApi.setNotificationListener(listener)
+    }
+
+    fun setNetworkConnectionListener(listener: NetworkConnectionListener){
+        this.connectionListener = listener
+    }
+
     private fun extractExtension(url: String): String {
         return url.substringAfterLast('.', "").substringBefore('?')
     }
@@ -117,17 +119,23 @@ class TurboDownloader private constructor(
         }
     }
 
-    class Builder(private val activity: Activity, private val context: Context) {
-        private var notificationListener: DownloadNotificationListener? = null
-        private var networkConnectionListener: NetworkConnectionListener? = null
+    fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat
+                .from(context)
+                .areNotificationsEnabled()
+        }
+    }
+
+    class Builder(private val context: Context) {
         private var threadCount: Int = 4
-        private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
-
-        fun setNetworkConnectionListener(listener: NetworkConnectionListener) = apply {
-            networkConnectionListener = listener
-        }
 
         fun setAutoThreading(enabled: Boolean) = apply {
             autoThreading = enabled
@@ -141,16 +149,6 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
-        fun setPermissionChecked(enabled: Boolean) = apply {
-            checkPermission = enabled
-        }
-
-        fun setNotificationListener(
-            listener: DownloadNotificationListener
-        ) = apply {
-            notificationListener = listener
-        }
-
         fun build(): TurboDownloader {
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
@@ -158,60 +156,12 @@ class TurboDownloader private constructor(
             if (threadCount > 16)
                 throw IllegalArgumentException("Thread count cannot exceed 16")
 
-            if (checkPermission) {
-                if (!hasNotificationPermission(activity)) {
-                    requestNotificationPermission(activity)
-                    Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Notification permission required!")
-                }
-            }
-
             return TurboDownloader(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 showFormatter = showFormatter,
-                notificationListener = notificationListener,
-                autoThreading = autoThreading,
-                connectionListener = networkConnectionListener
+                autoThreading = autoThreading
             )
-        }
-
-        private fun hasNotificationPermission(
-            activity: Activity
-        ): Boolean {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ActivityCompat.checkSelfPermission(
-                    activity,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            } else {
-                NotificationManagerCompat
-                    .from(activity)
-                    .areNotificationsEnabled()
-            }
-        }
-
-        @SuppressLint("InlinedApi")
-        private fun requestNotificationPermission(
-            activity: Activity
-        ) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ActivityCompat.requestPermissions(
-                    activity,
-                    arrayOf(
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ),
-                    100
-                )
-            } else {
-                val intent = Intent().apply {
-                    action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                    putExtra(
-                        Settings.EXTRA_APP_PACKAGE,
-                        activity.packageName
-                    )
-                }
-                activity.startActivity(intent)
-            }
         }
     }
 }
