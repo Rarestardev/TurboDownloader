@@ -1,13 +1,9 @@
 package com.rarestardev.turbodownloader.core
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -50,31 +46,39 @@ class TurboDownloader private constructor(
         val maxRetries = 5
         val delayMs = 5000L
 
-        for (attempt in 1..maxRetries) {
-            if (isInternetAvailable()) {
-                connectionListener?.onInternetAvailable()
-                val request = DownloadRequest(
-                    uri = url,
-                    fileName = finalName,
-                    threadCount = threadCount,
-                    autoThreading = autoThreading
-                )
-                return manager.enqueue(request)
-            }
-            Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "No internet (attempt $attempt/$maxRetries)")
-
-            if (attempt == maxRetries) {
-                Log.e(
+        if (hasNotificationPermission()) {
+            for (attempt in 1..maxRetries) {
+                if (isInternetAvailable()) {
+                    connectionListener?.onInternetAvailable()
+                    val request = DownloadRequest(
+                        uri = url,
+                        fileName = finalName,
+                        threadCount = threadCount,
+                        autoThreading = autoThreading
+                    )
+                    return manager.enqueue(request)
+                }
+                Log.w(
                     TurboConstants.TURBO_DOWNLOADER_LOG,
-                    "Download failed: no internet after $maxRetries"
+                    "No internet (attempt $attempt/$maxRetries)"
                 )
-                connectionListener?.onInternetFailed()
-                return null
+
+                if (attempt == maxRetries) {
+                    Log.e(
+                        TurboConstants.TURBO_DOWNLOADER_LOG,
+                        "Download failed: no internet after $maxRetries"
+                    )
+                    connectionListener?.onInternetFailed()
+                    return null
+                }
+
+                connectionListener?.onRetry(attempt, maxRetries, delayMs)
+
+                delay(delayMs)
             }
-
-            connectionListener?.onRetry(attempt, maxRetries, delayMs)
-
-            delay(delayMs)
+        } else {
+            Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Post notification permission needs!")
+            throw IllegalArgumentException("Post notification permission needs!")
         }
         return null
     }
@@ -117,11 +121,23 @@ class TurboDownloader private constructor(
         }
     }
 
-    class Builder(private val activity: Activity, private val context: Context) {
+    private fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat
+                .from(context)
+                .areNotificationsEnabled()
+        }
+    }
+
+    class Builder(private val context: Context) {
         private var notificationListener: DownloadNotificationListener? = null
         private var networkConnectionListener: NetworkConnectionListener? = null
         private var threadCount: Int = 4
-        private var checkPermission: Boolean = false
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
 
@@ -141,10 +157,6 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
-        fun setPermissionChecked(enabled: Boolean) = apply {
-            checkPermission = enabled
-        }
-
         fun setNotificationListener(
             listener: DownloadNotificationListener
         ) = apply {
@@ -158,13 +170,6 @@ class TurboDownloader private constructor(
             if (threadCount > 16)
                 throw IllegalArgumentException("Thread count cannot exceed 16")
 
-            if (checkPermission) {
-                if (!hasNotificationPermission(activity)) {
-                    requestNotificationPermission(activity)
-                    Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Notification permission required!")
-                }
-            }
-
             return TurboDownloader(
                 context = context.applicationContext,
                 threadCount = threadCount,
@@ -173,45 +178,6 @@ class TurboDownloader private constructor(
                 autoThreading = autoThreading,
                 connectionListener = networkConnectionListener
             )
-        }
-
-        private fun hasNotificationPermission(
-            activity: Activity
-        ): Boolean {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ActivityCompat.checkSelfPermission(
-                    activity,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            } else {
-                NotificationManagerCompat
-                    .from(activity)
-                    .areNotificationsEnabled()
-            }
-        }
-
-        @SuppressLint("InlinedApi")
-        private fun requestNotificationPermission(
-            activity: Activity
-        ) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ActivityCompat.requestPermissions(
-                    activity,
-                    arrayOf(
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ),
-                    100
-                )
-            } else {
-                val intent = Intent().apply {
-                    action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                    putExtra(
-                        Settings.EXTRA_APP_PACKAGE,
-                        activity.packageName
-                    )
-                }
-                activity.startActivity(intent)
-            }
         }
     }
 }

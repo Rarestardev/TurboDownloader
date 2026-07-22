@@ -66,28 +66,14 @@ class MainActivity : ComponentActivity() {
         )
         dir.mkdirs()*/
 
-        downloader = TurboDownloader.Builder(this, this)
+        downloader = TurboDownloader.Builder(this)
             .setThread(8)
 //            .setDir(dir)
             .setAutoThreading(true)
-            .setPermissionChecked(true)
             .setNotificationListener(object : DownloadNotificationListener {
                 override fun onNotificationClick(downloadId: DownloadId) {
                     println("click")
                 }
-
-                override fun onPauseClick(downloadId: DownloadId) {
-                    println("pause click")
-                }
-
-                override fun onResumeClick(downloadId: DownloadId) {
-                    println("resume click")
-                }
-
-                override fun onCancelClick(downloadId: DownloadId) {
-                    println("cancel click")
-                }
-
             })
             .setNetworkConnectionListener(object : NetworkConnectionListener {
                 override fun onRetry(
