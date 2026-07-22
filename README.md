@@ -145,14 +145,14 @@ lifecycleScope.launch {
 
 ## Roadmap
 
-- [ ] Download Queue
+- [x] Download Queue
 - [ ] Download Priority
 - [ ] Download Groups
-- [ ] Retry Failed Downloads
+- [x] Retry Failed Downloads
 - [ ] Download Scheduler
 - [ ] Wi-Fi Only Downloads
 - [ ] Download Speed Limiter
-- [ ] Download Listener
+- [x] Download Listener
 - [ ] Custom Notifications
 - [ ] Compose Components
 
