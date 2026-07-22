@@ -261,6 +261,12 @@ fun DownloadItem(
                 }
             }
 
+            DownloadStatus.FAILED -> {
+                IconButton(onClick = onResume) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                }
+            }
+
             else -> {}
         }
 
