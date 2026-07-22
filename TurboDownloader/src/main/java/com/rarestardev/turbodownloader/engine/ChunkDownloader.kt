@@ -2,10 +2,12 @@ package com.rarestardev.turbodownloader.engine
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.rarestardev.turbodownloader.storage.ChunkEntity
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
 import com.rarestardev.turbodownloader.utils.MergeChunksHelper
+import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -38,7 +40,7 @@ class ChunkDownloader(
             createChunks(download)
         }
 
-        val tempDir = File(context.cacheDir, "${download.id}_tmp")
+        val tempDir = File(context.filesDir, "${download.id}_tmp")
         tempDir.mkdirs()
 
 
@@ -101,13 +103,16 @@ class ChunkDownloader(
         var current = chunk
         val chunkFile = File(outputDir, "chunk_${current.index}.part")
 
-//        val startByte = current.start + current.downloaded
-
         if (chunkFile.exists()) {
             val realDownloaded = chunkFile.length()
-
             if (realDownloaded != current.downloaded) {
                 current = current.copy(downloaded = realDownloaded)
+                dao.insertChunk(current)
+            }
+        } else {
+            if (current.downloaded > 0) {
+                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Chunk file missing for chunk ${current.index}, resetting to 0")
+                current = current.copy(downloaded = 0, isCompleted = false)
                 dao.insertChunk(current)
             }
         }

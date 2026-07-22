@@ -18,6 +18,8 @@ import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,7 +68,7 @@ class DownloadManager(
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
             update(id, DownloadState.Queued(id))
 
-            enqueueInternal(entity)
+            executeDownload(entity)
         }
 
         jobs[id.value] = job
@@ -82,7 +84,7 @@ class DownloadManager(
             pauseFlags[id.value] = false
             val entity = dao.getDownload(id.value) ?: return@launch
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            enqueueInternal(entity)
+            executeDownload(entity)
         }
 
         jobs[id.value] = job
@@ -126,7 +128,7 @@ class DownloadManager(
             dao.deleteChunks(id.value)
             dao.deleteDownload(id.value)
 
-            val tempDir = File(context.cacheDir, "${id.value}_tmp")
+            val tempDir = File(context.filesDir, "chunks_${id.value}")
             if (tempDir.exists()) tempDir.deleteRecursively()
 
             stopServiceIfIdle()
@@ -248,7 +250,7 @@ class DownloadManager(
             val downloads = dao.getAllDownloadsOnce()
             downloads.forEach { download ->
                 if (download.status == DownloadStatus.COMPLETED || download.status == DownloadStatus.CANCELLED) {
-                    val tempDir = File(context.cacheDir, "${download.id}_tmp")
+                    val tempDir = File(context.filesDir, "chunks_${download.id}")
                     if (tempDir.exists()) tempDir.deleteRecursively()
                 }
             }
@@ -258,6 +260,100 @@ class DownloadManager(
             TurboConstants.TURBO_DOWNLOADER_LOG,
             "release completed"
         )
+    }
+
+    private suspend fun executeDownload(entity: DownloadEntity){
+        val id = DownloadId(entity.id)
+        val maxRetries = 3
+        var currentAttempt = 1
+        var downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
+
+        while (currentAttempt <= maxRetries){
+            if (pauseFlags[id.value] == true){
+                val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+                update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                return
+            }
+
+            try {
+                dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
+                update(id, DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloadedBeforeRetry)))
+
+                var downloaded = downloadedBeforeRetry
+                var lastByte = downloaded
+                var lastTime = System.currentTimeMillis()
+
+                val resultUri = downloader.download(
+                    entity,
+                    onProgress = { chunkBytes ->
+                        downloaded += chunkBytes
+                        val now = System.currentTimeMillis()
+                        val elapsed = now - lastTime
+                        if (elapsed >= 1000) {
+                            val speed = ((downloaded - lastByte) * 1000L) / elapsed
+                            val remainBytes = entity.totalBytes - downloaded
+                            val remainTime = if (speed > 0) remainBytes * 1000L / speed else 0L
+                            lastByte = downloaded
+                            lastTime = now
+                            update(
+                                id, DownloadState.Running(id, DownloadProgress(
+                                    totalBytes = entity.totalBytes,
+                                    downloadBytes = downloaded,
+                                    speedBytesPerSec = speed,
+                                    remainingTimeMillis = remainTime,
+                                    status = DownloadStatus.RUNNING
+                                ))
+                            )
+                        }
+                    },
+                    isPaused = { pauseFlags[id.value] == true }
+                )
+
+                if (pauseFlags[id.value] == true) {
+                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    return
+                }
+
+                dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
+                update(id, DownloadState.Completed(id, resultUri))
+                return
+
+            } catch (e: Exception) {
+                if (pauseFlags[id.value] == true) {
+                    val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    return
+                }
+                @Suppress("DEPRECATION")
+                if (!isActive) return   // cancellation
+
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Download failed (attempt $currentAttempt/$maxRetries): ${e.message}")
+
+                if (currentAttempt < maxRetries) {
+                    if (currentAttempt < maxRetries - 1) {
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying resume in 3s...")
+                        delay(3000)
+                        downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
+                    } else {
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying full restart in 3s...")
+                        delay(3000)
+                        dao.deleteChunks(id.value)
+                        val tempDir = File(context.filesDir, "chunks_${entity.id}")
+                        if (tempDir.exists()) tempDir.deleteRecursively()
+                        downloadedBeforeRetry = 0
+                    }
+
+                    update(id, DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloadedBeforeRetry)))
+                    currentAttempt++
+                } else {
+                    dao.updateStatus(id.value, DownloadStatus.FAILED.name)
+                    update(id, DownloadState.Failed(id, e))
+                    val tempDir = File(context.filesDir, "chunks_${entity.id}")
+                    if (tempDir.exists()) tempDir.deleteRecursively()
+                    return
+                }
+            }
+        }
     }
 
     private fun computeAutoThreadCount(fileSizeBytes: Long): Int {
