@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 import com.rarestardev.turbodownloader.state.DownloadId
 import kotlin.jvm.java
 
-object NotificationHelper {
+internal object NotificationHelper {
     private const val CHANNEL_ID = "turbodownloader_channel"
 
     const val ACTION_PAUSE = "ACTION_PAUSE"
