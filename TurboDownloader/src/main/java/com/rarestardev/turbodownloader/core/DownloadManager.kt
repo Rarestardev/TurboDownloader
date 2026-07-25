@@ -2,6 +2,7 @@ package com.rarestardev.turbodownloader.core
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -353,6 +354,46 @@ class DownloadManager(
                     return
                 }
             }
+        }
+    }
+
+    fun removeCompleted(id: DownloadId, deleteFile: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            val entity = dao.getDownload(id.value)
+            if (entity == null || entity.status != DownloadStatus.COMPLETED) {
+                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not found or not completed")
+                return@launch
+            }
+
+            val currentState = _state.value[id]
+
+            val map = _state.value.toMutableMap()
+            map.remove(id)
+            _state.value = map
+
+            dao.deleteChunks(id.value)
+            dao.deleteDownload(id.value)
+
+            val tempDir = File(context.filesDir, "chunks_${id.value}")
+            if (tempDir.exists()) tempDir.deleteRecursively()
+
+            if (deleteFile && currentState is DownloadState.Completed) {
+                val fileUri: Uri =
+                    (currentState.fileUri ?: "") as Uri
+                try {
+                    val deleted = context.contentResolver.delete(fileUri, null, null)
+                    if (deleted == 0) {
+                        if (fileUri.scheme == "file") {
+                            val file = File(requireNotNull(fileUri.path))
+                            if (file.exists()) file.delete()
+                        }
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Cannot delete file: ${e.message}")
+                }
+            }
+
+            stopServiceIfIdle()
         }
     }
 

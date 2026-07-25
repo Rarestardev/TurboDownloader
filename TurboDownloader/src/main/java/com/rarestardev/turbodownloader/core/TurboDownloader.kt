@@ -74,6 +74,10 @@ class TurboDownloader private constructor(
 
     fun pause(id: DownloadId) = manager.pause(id)
     fun resume(id: DownloadId) = manager.resume(id)
+
+    fun removeDownloadFile(id: DownloadId, withFile: Boolean) =
+        manager.removeCompleted(id, withFile)
+
     suspend fun cancel(id: DownloadId) = manager.cancel(id)
     fun release() = manager.release()
     fun downloadState() = manager.state
@@ -100,7 +104,7 @@ class TurboDownloader private constructor(
         ChunkDownloadApi.setNotificationListener(listener)
     }
 
-    fun setNetworkConnectionListener(listener: NetworkConnectionListener){
+    fun setNetworkConnectionListener(listener: NetworkConnectionListener) {
         this.connectionListener = listener
     }
 

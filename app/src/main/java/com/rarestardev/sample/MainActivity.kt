@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
@@ -90,7 +91,7 @@ class MainActivity : ComponentActivity() {
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
 //                val sampleUri = "https://speed.hetzner.de/1MB.bin"
-                val sampleUri = "https://cdn021.ronakfilm.com/TMaApu06/DHfCp2FI/vDZ77P9u/S01/E01/Cape.Fear.2025.S01.E01.480p.mp4"
+                val sampleUri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4?v=1784960642"
                 var hasPermission by remember { mutableStateOf(false) }
 
                 downloader.setNotificationListener(object : DownloadNotificationListener {
@@ -180,7 +181,13 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onPause = { downloader.pause(DownloadId(entity.id)) },
                                 onResume = { downloader.resume(DownloadId(entity.id)) },
-                                onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } }
+                                onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } },
+                                onRemove = {
+                                    downloader.removeDownloadFile(
+                                        DownloadId(entity.id),
+                                        true
+                                    )
+                                }
                             )
                         }
                     }
@@ -215,6 +222,7 @@ private fun formatSize(bytes: Long): String {
 fun DownloadItem(
     entity: DownloadEntity,
     state: DownloadState?,
+    onRemove: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit
@@ -304,6 +312,10 @@ fun DownloadItem(
 
         IconButton(onClick = onCancel) {
             Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+        }
+
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
         }
     }
 }
