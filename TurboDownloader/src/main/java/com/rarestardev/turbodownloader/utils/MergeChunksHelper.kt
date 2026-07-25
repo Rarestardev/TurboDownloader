@@ -24,15 +24,19 @@ object MergeChunksHelper {
     ): Uri? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // use android 10 above
+            val nowSeconds = System.currentTimeMillis() / 1000
+
             val contentValue = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, finalFileName)
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
                 put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 put(MediaStore.Downloads.IS_PENDING, 1)
 
-                val nowSeconds = System.currentTimeMillis() / 1000
                 put(MediaStore.Downloads.DATE_ADDED, nowSeconds)
                 put(MediaStore.Downloads.DATE_MODIFIED, nowSeconds)
+
+                // مهم برای اینکه اول لیست بیاید
+                put(MediaStore.Downloads.DATE_TAKEN, System.currentTimeMillis())
             }
 
             val resolver = context.contentResolver
@@ -55,6 +59,7 @@ object MergeChunksHelper {
                     val finalNowSeconds = System.currentTimeMillis() / 1000
                     contentValue.put(MediaStore.Downloads.DATE_MODIFIED, finalNowSeconds)
 
+                    contentValue.put(MediaStore.Downloads.DATE_MODIFIED, System.currentTimeMillis() / 1000)
                     resolver.update(uri, contentValue, null, null)
                     return uri
                 } catch (e: Exception) {
@@ -91,11 +96,18 @@ object MergeChunksHelper {
                     }
                 }
 
+                val nowSeconds = System.currentTimeMillis() / 1000
+
                 val values = ContentValues().apply {
                     put(MediaStore.Files.FileColumns.DATA, outputFile.absolutePath)
                     put(MediaStore.Files.FileColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.Files.FileColumns.DATE_MODIFIED, System.currentTimeMillis() / 1000)
+
+                    put(MediaStore.Files.FileColumns.DATE_ADDED, nowSeconds)
+                    put(MediaStore.Files.FileColumns.DATE_MODIFIED, nowSeconds)
+
+                    put(MediaStore.Files.FileColumns.DATE_TAKEN, System.currentTimeMillis())
                 }
+
                 val uri = context.contentResolver.insert(
                     MediaStore.Files.getContentUri("external"), values
                 )
