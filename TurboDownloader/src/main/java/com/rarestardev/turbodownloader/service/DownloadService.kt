@@ -16,10 +16,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
-class DownloadService : Service() {
+internal class DownloadService : Service() {
 
     private lateinit var manager: DownloadManager
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var foregroundStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -42,7 +43,7 @@ class DownloadService : Service() {
                     newManager
                 }
 
-        try {
+        /*try {
             startForeground(
                 1,
                 NotificationHelper.createForeground(this)
@@ -50,33 +51,37 @@ class DownloadService : Service() {
             Log.d("DownloadService", "Foreground started")
         } catch (e: Exception) {
             Log.e("DownloadService", "startForeground failed", e)
-        }
+        }*/
 
         serviceScope.launch {
             manager.state.collect { map ->
-                /*Log.d(
-                    TurboConstants.TURBO_DOWNLOADER_LOG,
-                    "states size = ${map.size}"
-                )*/
                 map.forEach { (id, state) ->
-
-                    /*Log.d(
-                        TurboConstants.TURBO_DOWNLOADER_LOG,
-                        "id=${id.value} state=$state"
-                    )*/
-
                     val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
                     when (state) {
                         is DownloadState.Running -> {
-                            nm.notify(
-                                notificationId(id),
-                                NotificationHelper.create(
-                                    this@DownloadService,
-                                    id,
-                                    state.progress.percent
+                            if (!foregroundStarted){
+
+                                startForeground(
+                                    notificationId(id),
+                                    NotificationHelper.create(
+                                        this@DownloadService,
+                                        id,
+                                        state.progress.percent
+                                    )
                                 )
-                            )
+
+                                foregroundStarted = true
+                            }else {
+                                nm.notify(
+                                    notificationId(id),
+                                    NotificationHelper.create(
+                                        this@DownloadService,
+                                        id,
+                                        state.progress.percent
+                                    )
+                                )
+                            }
                         }
 
                         is DownloadState.Paused -> {
@@ -163,6 +168,8 @@ class DownloadService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Destroy")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?) = null
