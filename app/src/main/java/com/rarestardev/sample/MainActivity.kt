@@ -1,6 +1,7 @@
 package com.rarestardev.sample
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -64,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var downloader: TurboDownloader
 
+    @SuppressLint("ObsoleteSdkInt")
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
