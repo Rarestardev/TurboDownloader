@@ -46,7 +46,7 @@ Add dependency:
 
 ```kotlin
 dependencies {
-	 implementation("com.github.rarestardev:turbodownloader:1.1.3")
+	 implementation(com.github.RareStarDev:TurboDownloader:1.1.3")
 }
 ```
 
