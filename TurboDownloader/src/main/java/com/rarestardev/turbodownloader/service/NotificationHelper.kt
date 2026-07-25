@@ -46,9 +46,11 @@ object NotificationHelper {
                 "Download service running"
             )
             .setOngoing(true)
-            .setCategory(
-                NotificationCompat.CATEGORY_SERVICE
-            )
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
@@ -119,7 +121,10 @@ object NotificationHelper {
                     ACTION_RESUME
                 )
             )
-            .addAction(
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            /*.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "لغو",
                 actionIntent(
@@ -127,7 +132,7 @@ object NotificationHelper {
                     id,
                     ACTION_CANCEL
                 )
-            )
+            )*/
             .build()
     }
 
@@ -190,7 +195,7 @@ object NotificationHelper {
         )
     }
 
-    private fun notificationClickIntent(context: Context,id: DownloadId): PendingIntent? {
+    private fun notificationClickIntent(context: Context, id: DownloadId): PendingIntent? {
         val clickIntent =
             Intent(
                 context,
