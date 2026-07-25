@@ -90,8 +90,7 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val observerState by downloader.downloadState().collectAsState()
                 val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
-//                val sampleUri = "https://speed.hetzner.de/1MB.bin"
-                val sampleUri = "https://cdn01.ronakfilm.com/vC9_--j9/vHheMtmx/vDZ77P9u/Trailer.dub.mp4?v=1784960642"
+                val sampleUri = "https://speed.hetzner.de/1MB.bin"
                 var hasPermission by remember { mutableStateOf(false) }
 
                 downloader.setNotificationListener(object : DownloadNotificationListener {
