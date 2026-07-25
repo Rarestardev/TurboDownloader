@@ -81,7 +81,7 @@ object NotificationHelper {
                     ACTION_PAUSE
                 )
             )
-            .addAction(
+            /*.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "لغو",
                 actionIntent(
@@ -89,7 +89,7 @@ object NotificationHelper {
                     id,
                     ACTION_CANCEL
                 )
-            )
+            )*/
             .build()
     }
 
