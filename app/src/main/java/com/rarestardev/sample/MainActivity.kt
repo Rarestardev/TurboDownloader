@@ -37,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -100,12 +101,13 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter", "InlinedApi")
     @Composable
-    private fun MainUiScreen(){
+    private fun MainUiScreen() {
         val scope = rememberCoroutineScope()
         val observerState by downloader.downloadState().collectAsState()
         val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
         val sampleUri = "https://speed.hetzner.de/1MB.bin"
         var hasPermission by remember { mutableStateOf(false) }
+        var urlAddressState by remember { mutableStateOf("") }
 
         LaunchedEffect(downloader.hasNotificationPermission()) {
             hasPermission = downloader.hasNotificationPermission()
@@ -121,6 +123,17 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(Modifier.height(36.dp))
+
+                Icon(
+                    imageVector = Icons.Default.Downloading,
+                    contentDescription = null,
+                    modifier = Modifier.size(60.dp)
+                )
+
+                OutlinedTextField(
+                    value = urlAddressState,
+                    onValueChange = { urlAddressState = it}
+                )
 
                 Button(
                     onClick = {
@@ -181,7 +194,7 @@ class MainActivity : ComponentActivity() {
         networkConnection()
     }
 
-    private fun notificationClickHandler(){
+    private fun notificationClickHandler() {
         downloader.setNotificationListener(object : DownloadNotificationListener {
             override fun onNotificationClick(downloadId: DownloadId) {
                 val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
@@ -193,7 +206,7 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    private fun networkConnection(){
+    private fun networkConnection() {
         downloader.setNetworkConnectionListener(
             object : NetworkConnectionListener {
                 override fun onRetry(
