@@ -42,7 +42,7 @@ publishing {
             }
             groupId = "com.github.RareStarDev"
             artifactId = "TurboDownloader"
-            version = "1.1.3"
+            version = "1.1.4"
         }
     }
 }
