@@ -6,11 +6,15 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,11 +23,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -32,7 +37,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -105,7 +109,6 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val observerState by downloader.downloadState().collectAsState()
         val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
-        val sampleUri = "https://speed.hetzner.de/1MB.bin"
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
 
@@ -132,58 +135,93 @@ class MainActivity : ComponentActivity() {
 
                 OutlinedTextField(
                     value = urlAddressState,
-                    onValueChange = { urlAddressState = it}
-                )
-
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (hasPermission) {
-                                downloader.startDownload(sampleUri)
-                            } else {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    ActivityCompat.requestPermissions(
-                                        this@MainActivity,
-                                        arrayOf(
-                                            Manifest.permission.POST_NOTIFICATIONS
-                                        ),
-                                        100
-                                    )
-                                } else {
-                                    val intent = Intent().apply {
-                                        action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                                        putExtra(
-                                            Settings.EXTRA_APP_PACKAGE,
-                                            packageName
-                                        )
+                    onValueChange = { urlAddressState = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    label = { Text("Address...") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Default.ArrowForward,
+                            contentDescription = "null",
+                            modifier = Modifier.clickable {
+                                scope.launch {
+                                    if (urlAddressState.isNotEmpty()) {
+                                        if (hasPermission) {
+                                            downloader.startDownload(urlAddressState)
+                                            urlAddressState = ""
+                                        } else {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                ActivityCompat.requestPermissions(
+                                                    this@MainActivity,
+                                                    arrayOf(
+                                                        Manifest.permission.POST_NOTIFICATIONS
+                                                    ),
+                                                    100
+                                                )
+                                            } else {
+                                                val intent = Intent().apply {
+                                                    action =
+                                                        Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                                    putExtra(
+                                                        Settings.EXTRA_APP_PACKAGE,
+                                                        packageName
+                                                    )
+                                                }
+                                                startActivity(intent)
+                                            }
+                                        }
+                                        Toast.makeText(
+                                            this@MainActivity, "Download started...",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Paste address to field...",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
-                                    startActivity(intent)
                                 }
                             }
-                        }
-                    },
-                    modifier = Modifier.statusBarsPadding()
-                ) {
-                    Text(text = "download")
-                }
+                        )
+                    }
+                )
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(allDownloads) { entity ->
-                        val state = observerState[DownloadId(entity.id)]
-                        DownloadItem(
-                            entity = entity,
-                            state = state,
-                            onPause = { downloader.pause(DownloadId(entity.id)) },
-                            onResume = { downloader.resume(DownloadId(entity.id)) },
-                            onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } },
-                            onRemove = {
-                                downloader.removeDownloadFile(
-                                    DownloadId(entity.id),
-                                    true
-                                )
-                            }
+                Spacer(Modifier.height(36.dp))
+
+                if (allDownloads.isNotEmpty()) {
+                    Text("Downloads")
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(allDownloads) { entity ->
+                            val state = observerState[DownloadId(entity.id)]
+                            DownloadItem(
+                                entity = entity,
+                                state = state,
+                                onPause = { downloader.pause(DownloadId(entity.id)) },
+                                onResume = { downloader.resume(DownloadId(entity.id)) },
+                                onCancel = { scope.launch { downloader.cancel(DownloadId(entity.id)) } },
+                                onRemove = {
+                                    downloader.removeDownloadFile(
+                                        DownloadId(entity.id),
+                                        true
+                                    )
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No downloads item"
                         )
                     }
                 }
@@ -258,6 +296,11 @@ class MainActivity : ComponentActivity() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(8.dp)
+                .background(
+                    color = Color.DarkGray,
+                    shape = RoundedCornerShape(12.dp)
+                )
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -319,7 +362,7 @@ class MainActivity : ComponentActivity() {
             }
 
             IconButton(onClick = onCancel) {
-                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+                Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
             }
 
             IconButton(onClick = onRemove) {
