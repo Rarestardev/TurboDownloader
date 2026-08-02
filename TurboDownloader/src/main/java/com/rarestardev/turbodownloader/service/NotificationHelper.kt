@@ -1,5 +1,6 @@
 package com.rarestardev.turbodownloader.service
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.rarestardev.turbodownloader.R
 import com.rarestardev.turbodownloader.state.DownloadId
 import kotlin.jvm.java
 
@@ -24,32 +26,43 @@ internal object NotificationHelper {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "turbodownloader",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             )
             val nm = context.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
     }
 
+    @SuppressLint("LaunchActivityFromNotification")
     fun createForeground(
         context: Context
     ): Notification {
         createChannel(context)
+        val intent = Intent(context, DownloadReceiver::class.java).apply {
+            action = ACTION_CLICK
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(
-                android.R.drawable.stat_sys_download
-            )
+            .setSmallIcon(R.drawable.download_ic)
             .setContentTitle(
                 "Turbo Downloader"
             )
             .setContentText(
                 "Download service running"
             )
+            .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setShowWhen(false)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }

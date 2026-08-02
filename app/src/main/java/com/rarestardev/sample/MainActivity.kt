@@ -6,12 +6,15 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +23,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -33,10 +37,12 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -87,88 +93,105 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MDMTurboTheme {
-                val scope = rememberCoroutineScope()
-                val observerState by downloader.downloadState().collectAsState()
-                val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
-                val sampleUri = "https://speed.hetzner.de/1MB.bin"
-                var hasPermission by remember { mutableStateOf(false) }
+                MainUiScreen()
+            }
+        }
+    }
 
-                downloader.setNotificationListener(object : DownloadNotificationListener {
-                    override fun onNotificationClick(downloadId: DownloadId) {
-                        val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
-                            setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                            setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
+    override fun onDestroy() {
+        super.onDestroy()
+        downloader.release()
+    }
 
-                        startActivity(intent)
-                    }
-                })
+    @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter", "InlinedApi")
+    @Composable
+    private fun MainUiScreen() {
+        val scope = rememberCoroutineScope()
+        val observerState by downloader.downloadState().collectAsState()
+        val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+        var hasPermission by remember { mutableStateOf(false) }
+        var urlAddressState by remember { mutableStateOf("") }
 
-                downloader.setNetworkConnectionListener(
-                    object : NetworkConnectionListener {
-                        override fun onRetry(
-                            attempt: Int,
-                            maxRetries: Int,
-                            delayMs: Long
-                        ) {
-                            println("تلاش $attempt از $maxRetries – اینترنت قطع است")
-                        }
+        LaunchedEffect(downloader.hasNotificationPermission()) {
+            hasPermission = downloader.hasNotificationPermission()
+        }
 
-                        override fun onInternetAvailable() {
-                            println("اینترنت وصل شد، دانلود شروع می‌شود...")
-                        }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier.padding(paddingValues),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(36.dp))
 
-                        override fun onInternetFailed() {
-                            println("دانلود ناموفق: اتصال برقرار نشد")
-                        }
-
-                    }
+                Icon(
+                    imageVector = Icons.Default.Downloading,
+                    contentDescription = null,
+                    modifier = Modifier.size(60.dp)
                 )
 
-                LaunchedEffect(downloader.hasNotificationPermission()) {
-                    hasPermission = downloader.hasNotificationPermission()
-                }
-
-                Column(
+                OutlinedTextField(
+                    value = urlAddressState,
+                    onValueChange = { urlAddressState = it },
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.DarkGray),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(Modifier.height(36.dp))
-
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                if (hasPermission) {
-                                    downloader.startDownload(sampleUri)
-                                } else {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        ActivityCompat.requestPermissions(
-                                            this@MainActivity,
-                                            arrayOf(
-                                                Manifest.permission.POST_NOTIFICATIONS
-                                            ),
-                                            100
-                                        )
-                                    } else {
-                                        val intent = Intent().apply {
-                                            action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                                            putExtra(
-                                                Settings.EXTRA_APP_PACKAGE,
-                                                packageName
-                                            )
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    label = { Text("Address...") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Default.ArrowForward,
+                            contentDescription = "null",
+                            modifier = Modifier.clickable {
+                                scope.launch {
+                                    if (urlAddressState.isNotEmpty()) {
+                                        if (hasPermission) {
+                                            downloader.startDownload(urlAddressState)
+                                            urlAddressState = ""
+                                        } else {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                ActivityCompat.requestPermissions(
+                                                    this@MainActivity,
+                                                    arrayOf(
+                                                        Manifest.permission.POST_NOTIFICATIONS
+                                                    ),
+                                                    100
+                                                )
+                                            } else {
+                                                val intent = Intent().apply {
+                                                    action =
+                                                        Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                                    putExtra(
+                                                        Settings.EXTRA_APP_PACKAGE,
+                                                        packageName
+                                                    )
+                                                }
+                                                startActivity(intent)
+                                            }
                                         }
-                                        startActivity(intent)
+                                        Toast.makeText(
+                                            this@MainActivity, "Download started...",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Paste address to field...",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             }
-                        },
-                        modifier = Modifier.statusBarsPadding()
-                    ) {
-                        Text(text = "download")
+                        )
                     }
+                )
+
+                Spacer(Modifier.height(36.dp))
+
+                if (allDownloads.isNotEmpty()) {
+                    Text("Downloads")
 
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth()
@@ -190,143 +213,183 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No downloads item"
+                        )
+                    }
                 }
             }
         }
+
+        notificationClickHandler()
+        networkConnection()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        downloader.release()
-    }
-}
+    private fun notificationClickHandler() {
+        downloader.setNotificationListener(object : DownloadNotificationListener {
+            override fun onNotificationClick(downloadId: DownloadId) {
+                val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
+                }
 
-private fun formatSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-
-    val units = arrayOf("B", "KB", "MB", "GB", "TB")
-    var size = bytes.toDouble()
-    var index = 0
-
-    while (size >= 1024 && index < units.lastIndex) {
-        size /= 1024
-        index++
+                startActivity(intent)
+            }
+        })
     }
 
-    return "%.2f %s".format(size, units[index])
-}
+    private fun networkConnection() {
+        downloader.setNetworkConnectionListener(
+            object : NetworkConnectionListener {
+                override fun onRetry(
+                    attempt: Int,
+                    maxRetries: Int,
+                    delayMs: Long
+                ) {
+                    println("تلاش $attempt از $maxRetries – اینترنت قطع است")
+                }
 
+                override fun onInternetAvailable() {
+                    println("اینترنت وصل شد، دانلود شروع می‌شود...")
+                }
 
-@Composable
-fun DownloadItem(
-    entity: DownloadEntity,
-    state: DownloadState?,
-    onRemove: () -> Unit,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onCancel: () -> Unit
-) {
-    val progress = when (state) {
-        is DownloadState.Running -> state.progress.percent
-        is DownloadState.Paused -> state.progress.percent
-        is DownloadState.Completed -> 100
-        else -> 0
-    }
+                override fun onInternetFailed() {
+                    println("دانلود ناموفق: اتصال برقرار نشد")
+                }
 
-    val downloaded = when (state) {
-        is DownloadState.Running -> state.progress.downloadBytes
-        else -> 0L
-    }
-
-    val speed = when (state) {
-        is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
-        else -> "0 KB"
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-
-        // Status Icon
-        Icon(
-            imageVector = when (state) {
-                is DownloadState.Running -> Icons.Default.Downloading
-                is DownloadState.Paused -> Icons.Default.Pause
-                is DownloadState.Completed -> Icons.Default.Check
-                is DownloadState.Failed -> Icons.Default.Error
-                else -> Icons.Default.HourglassEmpty
-            },
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(32.dp)
+            }
         )
+    }
 
-        Spacer(Modifier.width(12.dp))
+    @Composable
+    private fun DownloadItem(
+        entity: DownloadEntity,
+        state: DownloadState?,
+        onRemove: () -> Unit,
+        onPause: () -> Unit,
+        onResume: () -> Unit,
+        onCancel: () -> Unit
+    ) {
+        val progress = when (state) {
+            is DownloadState.Running -> state.progress.percent
+            is DownloadState.Paused -> state.progress.percent
+            is DownloadState.Completed -> 100
+            else -> 0
+        }
 
-        Column(modifier = Modifier.weight(1f)) {
+        val downloaded = when (state) {
+            is DownloadState.Running -> state.progress.downloadBytes
+            else -> 0L
+        }
 
-            Text(entity.fileName, color = Color.White)
+        val speed = when (state) {
+            is DownloadState.Running -> state.progress.speedBytesPerSec.toSpeedString()
+            else -> "0 KB"
+        }
 
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .background(
+                    color = Color.DarkGray,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = when (state) {
+                    is DownloadState.Running -> Icons.Default.Downloading
+                    is DownloadState.Paused -> Icons.Default.Pause
+                    is DownloadState.Completed -> Icons.Default.Check
+                    is DownloadState.Failed -> Icons.Default.Error
+                    else -> Icons.Default.HourglassEmpty
+                },
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
             )
 
-            Text(
-                text = "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
-                color = Color.LightGray,
-                fontSize = 12.sp
-            )
-        }
+            Spacer(Modifier.width(12.dp))
 
-        Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(entity.fileName, color = Color.White)
 
-        // Pause / Resume / Cancel
-        when (entity.status) {
-            DownloadStatus.RUNNING -> {
-                IconButton(onClick = onPause) {
-                    Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
-                }
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                )
+
+                Text(
+                    text = "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
             }
 
-            DownloadStatus.PAUSED -> {
-                IconButton(onClick = onResume) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+            Spacer(Modifier.width(12.dp))
+
+            // Pause / Resume / Cancel
+            when (entity.status) {
+                DownloadStatus.RUNNING -> {
+                    IconButton(onClick = onPause) {
+                        Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
+                    }
                 }
+
+                DownloadStatus.PAUSED -> {
+                    IconButton(onClick = onResume) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                    }
+                }
+
+                DownloadStatus.FAILED -> {
+                    IconButton(onClick = onResume) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                    }
+                }
+
+                else -> {}
             }
 
-            DownloadStatus.FAILED -> {
-                IconButton(onClick = onResume) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
-                }
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
             }
 
-            else -> {}
-        }
-
-        IconButton(onClick = onCancel) {
-            Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
-        }
-
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
+            }
         }
     }
-}
 
-fun Long.toSpeedString(): String {
+    private fun formatSize(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        var size = bytes.toDouble()
+        var index = 0
 
-    val kb = this / 1024.0
+        while (size >= 1024 && index < units.lastIndex) {
+            size /= 1024
+            index++
+        }
+        return "%.2f %s".format(size, units[index])
+    }
 
-    val mb = kb / 1024.0
-
-    return when {
-        mb >= 1 -> "%.2f MB/s".format(mb)
-        else -> "%.0f KB/s".format(kb)
+    private fun Long.toSpeedString(): String {
+        val kb = this / 1024.0
+        val mb = kb / 1024.0
+        return when {
+            mb >= 1 -> "%.2f MB/s".format(mb)
+            else -> "%.0f KB/s".format(kb)
+        }
     }
 }
