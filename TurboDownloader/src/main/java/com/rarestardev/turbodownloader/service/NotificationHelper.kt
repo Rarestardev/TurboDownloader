@@ -1,5 +1,6 @@
 package com.rarestardev.turbodownloader.service
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -32,10 +33,22 @@ internal object NotificationHelper {
         }
     }
 
+    @SuppressLint("LaunchActivityFromNotification")
     fun createForeground(
         context: Context
     ): Notification {
         createChannel(context)
+        val intent = Intent(context, DownloadReceiver::class.java).apply {
+            action = ACTION_CLICK
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.download_ic)
             .setContentTitle(
@@ -44,6 +57,7 @@ internal object NotificationHelper {
             .setContentText(
                 "Download service running"
             )
+            .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
