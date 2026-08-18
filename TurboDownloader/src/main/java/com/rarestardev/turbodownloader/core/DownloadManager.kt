@@ -25,8 +25,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 class DownloadManager(
     private val dao: DownloadDao,
@@ -246,6 +248,10 @@ class DownloadManager(
         return dao.getAllDownloads()
     }
 
+    fun allQueuedList(): Flow<List<DownloadEntity>>{
+        return dao.getAllQueuedDownloads()
+    }
+
     fun release() {
         scope.launch(Dispatchers.IO) {
             val downloads = dao.getAllDownloadsOnce()
@@ -333,11 +339,11 @@ class DownloadManager(
                 if (currentAttempt < maxRetries) {
                     if (currentAttempt < maxRetries - 1) {
                         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying resume in 3s...")
-                        delay(3000)
+                        delay(3.seconds)
                         downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
                     } else {
                         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying full restart in 3s...")
-                        delay(3000)
+                        delay(3.seconds)
                         dao.deleteChunks(id.value)
                         val tempDir = File(context.filesDir, "chunks_${entity.id}")
                         if (tempDir.exists()) tempDir.deleteRecursively()
@@ -408,5 +414,34 @@ class DownloadManager(
             mb < 2000 -> 12
             else -> 16
         }
+    }
+
+    fun addToQueue(request: DownloadRequest): DownloadId {
+//        ensureServiceRunning()
+        val id = DownloadId(UUID.randomUUID().toString())
+        val totalSize = runBlocking(Dispatchers.IO) { downloader.getFileSize(request.uri) }
+
+        val actualThreadCount = if (request.autoThreading && totalSize > 0) {
+            computeAutoThreadCount(totalSize)
+        } else {
+            request.threadCount
+        }
+
+        val entity = DownloadEntity(
+            id = id.value,
+            url = request.uri,
+            fileName = request.fileName,
+            totalBytes = totalSize,
+            chunkCount = actualThreadCount,
+            status = DownloadStatus.QUEUED
+        )
+
+        scope.launch(Dispatchers.IO) {
+            dao.insertDownload(entity)
+            update(id, DownloadState.Queued(id))
+        }
+
+        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Download added to queue: ${id.value}")
+        return id
     }
 }
