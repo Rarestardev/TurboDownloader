@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -109,6 +110,7 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val observerState by downloader.downloadState().collectAsState()
         val allDownloads by downloader.getAllDownloads().collectAsState(emptyList())
+        val queuedList by downloader.queuedListDownload().collectAsState(emptyList())
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
 
@@ -190,6 +192,17 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(Modifier.height(36.dp))
 
+                TextButton( // added to queued
+                    onClick = {
+                        downloader.addToQueues(urlAddressState)
+                        urlAddressState = ""
+                    }
+                ) {
+                    Text("Added to queue")
+                }
+
+                Spacer(Modifier.height(36.dp))
+
                 if (allDownloads.isNotEmpty()) {
                     Text("Downloads")
 
@@ -211,6 +224,22 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             )
+                        }
+
+                        items(queuedList) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        downloader.resume(DownloadId(it.id))
+                                    },
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(it.fileName)
+
+                                Text(it.status.name)
+                            }
                         }
                     }
                 } else {

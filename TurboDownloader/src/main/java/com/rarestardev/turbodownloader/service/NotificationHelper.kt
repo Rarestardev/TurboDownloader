@@ -46,8 +46,8 @@ internal object NotificationHelper {
             context,
             0,
             intent,
-            PendingIntent.FLAG_MUTABLE or
-                    PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_MUTABLE
+//                    or PendingIntent.FLAG_IMMUTABLE
         )
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
@@ -204,8 +204,8 @@ internal object NotificationHelper {
             context,
             id.value.hashCode() + action.hashCode(),
             intent,
-            PendingIntent.FLAG_MUTABLE or
-                    PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_MUTABLE
+//                    or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -226,8 +226,8 @@ internal object NotificationHelper {
             context,
             id.value.hashCode(),
             clickIntent,
-            PendingIntent.FLAG_MUTABLE or
-                    PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_MUTABLE
+//                    or PendingIntent.FLAG_IMMUTABLE
         )
     }
 }

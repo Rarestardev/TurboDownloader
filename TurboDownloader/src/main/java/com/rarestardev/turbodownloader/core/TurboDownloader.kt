@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
 import java.net.Socket
+import kotlin.time.Duration.Companion.milliseconds
 
 class TurboDownloader private constructor(
     private val context: Context,
@@ -67,9 +68,28 @@ class TurboDownloader private constructor(
 
             connectionListener?.onRetry(attempt, maxRetries, delayMs)
 
-            delay(delayMs)
+            delay(delayMs.milliseconds)
         }
         return null
+    }
+
+    fun addToQueues(
+        url: String,
+        fileName: String? = null
+    ): DownloadId {
+        val ext = extractExtension(url)
+        val finalName = fileName ?: "file_${System.currentTimeMillis()}.$ext"
+
+        val request = DownloadRequest(
+            uri = url,
+            fileName = finalName,
+            threadCount = threadCount,
+            autoThreading = autoThreading
+        )
+
+        val downloadId = manager.addToQueue(request)
+
+        return downloadId
     }
 
     fun pause(id: DownloadId) = manager.pause(id)
@@ -82,6 +102,8 @@ class TurboDownloader private constructor(
     fun release() = manager.release()
     fun downloadState() = manager.state
     fun getAllDownloads() = manager.allDownloads()
+
+    fun queuedListDownload() = manager.allQueuedList()
 
     fun formatSpeed(speed: Long): String {
         return if (showFormatter) {

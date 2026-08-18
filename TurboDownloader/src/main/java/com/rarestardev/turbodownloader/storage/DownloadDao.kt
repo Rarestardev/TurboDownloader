@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.rarestardev.turbodownloader.state.DownloadStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -28,6 +29,9 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
+
+    @Query("SELECT * FROM downloads WHERE status = :status")
+    fun getAllQueuedDownloads(status: DownloadStatus = DownloadStatus.QUEUED): Flow<List<DownloadEntity>>
 
     @Query("DELETE FROM chunks WHERE downloadId = :id")
     suspend fun deleteChunks(id: String)
