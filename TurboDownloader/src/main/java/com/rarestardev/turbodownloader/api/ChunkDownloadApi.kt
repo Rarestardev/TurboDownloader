@@ -31,7 +31,9 @@ object ChunkDownloadApi {
                     appContext,
                     DownloadDatabase::class.java,
                     "chunk_downloads.db"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration(true)
+                    .build()
 
             val scope =
                 CoroutineScope(

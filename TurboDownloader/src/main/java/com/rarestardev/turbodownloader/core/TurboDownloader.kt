@@ -73,7 +73,7 @@ class TurboDownloader private constructor(
         return null
     }
 
-    fun addToQueues(
+    suspend fun addToQueues(
         url: String,
         fileName: String? = null
     ): DownloadId {

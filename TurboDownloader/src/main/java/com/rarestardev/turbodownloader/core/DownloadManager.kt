@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -416,16 +416,19 @@ class DownloadManager(
         }
     }
 
-    fun addToQueue(request: DownloadRequest): DownloadId {
-//        ensureServiceRunning()
+    suspend fun addToQueue(request: DownloadRequest): DownloadId {
         val id = DownloadId(UUID.randomUUID().toString())
-        val totalSize = runBlocking(Dispatchers.IO) { downloader.getFileSize(request.uri) }
 
-        val actualThreadCount = if (request.autoThreading && totalSize > 0) {
-            computeAutoThreadCount(totalSize)
-        } else {
-            request.threadCount
+        val totalSize = withContext(Dispatchers.IO) {
+            downloader.getFileSize(request.uri)
         }
+
+        val actualThreadCount =
+            if (request.autoThreading && totalSize > 0) {
+                computeAutoThreadCount(totalSize)
+            } else {
+                request.threadCount
+            }
 
         val entity = DownloadEntity(
             id = id.value,
@@ -436,12 +439,17 @@ class DownloadManager(
             status = DownloadStatus.QUEUED
         )
 
-        scope.launch(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             dao.insertDownload(entity)
-            update(id, DownloadState.Queued(id))
         }
 
-        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Download added to queue: ${id.value}")
+        update(id, DownloadState.Queued(id))
+
+        Log.d(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Download added to queue: ${id.value}"
+        )
+
         return id
     }
 }

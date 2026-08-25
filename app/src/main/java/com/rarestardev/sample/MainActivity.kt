@@ -194,8 +194,10 @@ class MainActivity : ComponentActivity() {
 
                 TextButton( // added to queued
                     onClick = {
-                        downloader.addToQueues(urlAddressState)
-                        urlAddressState = ""
+                        scope.launch {
+                            downloader.addToQueues(urlAddressState)
+                            urlAddressState = ""
+                        }
                     }
                 ) {
                     Text("Added to queue")
