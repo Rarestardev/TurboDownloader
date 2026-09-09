@@ -1,5 +1,5 @@
 package com.rarestardev.turbodownloader.state
 
 enum class DownloadStatus {
-    IDLE, COMPLETED, CANCELLED, PAUSED, RUNNING, FAILED, QUEUED
+    IDLE, COMPLETED, CANCELLED, PAUSED, RUNNING, FAILED, QUEUED, SEEDING
 }

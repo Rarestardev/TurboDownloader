@@ -11,5 +11,6 @@ data class DownloadEntity(
     val fileName: String,
     val totalBytes: Long,
     val chunkCount: Int,
-    val status: DownloadStatus
+    val status: DownloadStatus,
+    val isTorrent: Boolean = false
 )

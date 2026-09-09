@@ -17,7 +17,13 @@ import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.InetSocketAddress
+import java.util.UUID
+import com.rarestardev.turbodownloader.storage.DownloadEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import com.rarestardev.turbodownloader.state.DownloadStatus
 import java.net.Socket
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -26,11 +32,11 @@ class TurboDownloader private constructor(
     private val threadCount: Int,
     private val showFormatter: Boolean,
     private val autoThreading: Boolean
-) {
+) : com.rarestardev.turbodownloader.listener.DownloadInternalListener {
     private val manager = ChunkDownloadApi.get(context)
     private var notificationListener: DownloadNotificationListener? = null
     private var connectionListener: NetworkConnectionListener? = null
-    private val torrentManager = TorrentManager(context)
+    internal var torrentManager = TorrentManager(context)
 
     /**
      * Enables or disables torrent download capability.
@@ -44,19 +50,48 @@ class TurboDownloader private constructor(
             }
         }
 
-    /**
-     * Internal getter for TorrentManager used for unit testing.
-     */
-    internal fun getTorrentManager() = torrentManager
-
     init {
-        // Initialization logic
+        manager.internalListener = this
+    }
+
+    override fun onDownloadCancelled(id: DownloadId) {
+        torrentManager.removeTorrent(id)
     }
 
     suspend fun startDownload(
         url: String,
         fileName: String? = null
     ): DownloadId? {
+        if (url.startsWith("magnet:") || url.endsWith(".torrent")) {
+            if (!enableTorrent) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent download requested but not enabled.")
+                return null
+            }
+            val saveDir = File(context.getExternalFilesDir(null), "Downloads")
+            if (!saveDir.exists()) saveDir.mkdirs()
+
+            val id = DownloadId("torrent_${UUID.randomUUID()}")
+            val name = if (url.startsWith("magnet:")) {
+                "Magnet Download..."
+            } else {
+                url.substringAfterLast("/")
+            }
+
+            val entity = DownloadEntity(
+                id = id.value,
+                url = url,
+                fileName = name,
+                totalBytes = -1,
+                chunkCount = 1,
+                status = DownloadStatus.RUNNING,
+                isTorrent = true
+            )
+            manager.insertDownloadInternal(entity)
+
+            torrentManager.download(id, url, saveDir, manager)
+            return id
+        }
+
         val ext = extractExtension(url)
         val finalName = fileName ?: "file_${System.currentTimeMillis()}.$ext"
 

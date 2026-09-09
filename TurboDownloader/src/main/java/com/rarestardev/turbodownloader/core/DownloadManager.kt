@@ -40,6 +40,7 @@ class DownloadManager(
     val state = _state.asStateFlow()
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
+    internal var internalListener: com.rarestardev.turbodownloader.listener.DownloadInternalListener? = null
 
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
@@ -122,6 +123,12 @@ class DownloadManager(
             jobs[id.value]?.cancel()
             jobs.remove(id.value)
             pauseFlags[id.value] = false
+
+            // Check if it's a torrent
+            val entity = dao.getDownload(id.value)
+            if (entity?.isTorrent == true) {
+                internalListener?.onDownloadCancelled(id)
+            }
 
             update(
                 id,
@@ -216,10 +223,28 @@ class DownloadManager(
         jobs[id.value] = job
     }
 
-    private fun update(id: DownloadId, state: DownloadState) {
+    internal fun update(id: DownloadId, state: DownloadState) {
         val map = _state.value.toMutableMap()
         map[id] = state
         _state.value = map
+    }
+
+    internal fun insertDownloadInternal(entity: DownloadEntity) {
+        scope.launch(Dispatchers.IO) {
+            dao.insertDownload(entity)
+        }
+    }
+
+    internal fun updateDownloadInfoInternal(id: DownloadId, name: String, totalBytes: Long) {
+        scope.launch(Dispatchers.IO) {
+            dao.updateInfo(id.value, name, totalBytes)
+        }
+    }
+
+    internal fun updateDownloadStatusInternal(id: DownloadId, status: DownloadStatus) {
+        scope.launch(Dispatchers.IO) {
+            dao.updateStatus(id.value, status.name)
+        }
     }
 
     private fun ensureServiceRunning() {
@@ -366,9 +391,21 @@ class DownloadManager(
     fun removeCompleted(id: DownloadId, deleteFile: Boolean) {
         scope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(id.value)
-            if (entity == null || entity.status != DownloadStatus.COMPLETED) {
-                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not found or not completed")
+            if (entity == null) {
+                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not found")
                 return@launch
+            }
+
+            // Allow removal if it's a torrent (even if not finished) or if it's completed
+            if (!entity.isTorrent && entity.status != DownloadStatus.COMPLETED) {
+                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not completed")
+                return@launch
+            }
+
+            if (entity.isTorrent) {
+                jobs[id.value]?.cancel()
+                jobs.remove(id.value)
+                internalListener?.onDownloadCancelled(id)
             }
 
             val currentState = _state.value[id]

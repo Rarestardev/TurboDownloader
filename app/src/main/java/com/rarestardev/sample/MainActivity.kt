@@ -3,6 +3,7 @@ package com.rarestardev.sample
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -89,6 +90,9 @@ class MainActivity : ComponentActivity() {
 //            .setDir(dir)
             .setAutoThreading(true)
             .build()
+        
+        // Enable torrent support
+        downloader.enableTorrent = true
 
         enableEdgeToEdge()
 
@@ -201,6 +205,34 @@ class MainActivity : ComponentActivity() {
                     }
                 ) {
                     Text("Added to queue")
+                }
+
+                TextButton(
+                    onClick = {
+                        // Improved Magnet link with explicit public trackers for better connectivity in restrictive networks
+                        val trackers = listOf(
+                            "udp://tracker.opentrackr.org:1337/announce",
+                            "udp://9.rarbg.com:2810/announce",
+                            "udp://tracker.openbittorrent.com:6969/announce",
+                            "http://tracker.openbittorrent.com:80/announce",
+                            "udp://opentracker.i2p.rocks:6969/announce",
+                            "udp://tracker.torrent.eu.org:451/announce",
+                            "udp://open.stealth.si:80/announce",
+                            "udp://exodus.desync.com:6969/announce",
+                            "udp://tracker.moeking.me:6969/announce"
+                        ).joinToString("") { "&tr=${Uri.encode(it)}" }
+
+                        val magnetLink = "magnet:?xt=urn:btih:6a71020755f115ce920c784e1b730f76906a5068&dn=debian-12.7.0-amd64-netinst.iso$trackers"
+                        
+                        urlAddressState = magnetLink
+                        scope.launch {
+                            downloader.startDownload(magnetLink)
+                            Toast.makeText(this@MainActivity, "Testing Torrent Download...", Toast.LENGTH_SHORT).show()
+                            urlAddressState = ""
+                        }
+                    }
+                ) {
+                    Text("Test Torrent (Debian + Trackers)", color = Color.Magenta)
                 }
 
                 Spacer(Modifier.height(36.dp))
@@ -341,7 +373,7 @@ class MainActivity : ComponentActivity() {
                     is DownloadState.Paused -> Icons.Default.Pause
                     is DownloadState.Completed -> Icons.Default.Check
                     is DownloadState.Failed -> Icons.Default.Error
-                    else -> Icons.Default.HourglassEmpty
+                    else -> if (entity.status == DownloadStatus.SEEDING) Icons.Default.Check else Icons.Default.HourglassEmpty
                 },
                 contentDescription = null,
                 tint = Color.White,

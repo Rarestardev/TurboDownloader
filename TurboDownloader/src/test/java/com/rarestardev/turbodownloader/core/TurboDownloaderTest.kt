@@ -5,6 +5,7 @@ import android.util.Log
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
+import io.mockk.verify
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -16,6 +17,7 @@ class TurboDownloaderTest {
     fun setup() {
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
+        every { Log.e(any(), any(), any()) } returns 0
     }
 
     @Test
@@ -23,14 +25,16 @@ class TurboDownloaderTest {
         // Given
         val mockContext = mockk<Context>(relaxed = true)
         every { mockContext.applicationContext } returns mockContext
+        val mockTorrentManager = mockk<TorrentManager>(relaxed = true)
+
+        val turboDownloader = TurboDownloader.Builder(mockContext).build()
+        turboDownloader.torrentManager = mockTorrentManager
 
         // When
-        val turboDownloader = TurboDownloader.Builder(mockContext)
-            .build()
         turboDownloader.enableTorrent = true
 
         // Then
-        assertTrue("Torrent engine should be initialized", turboDownloader.getTorrentManager().isInitialized)
+        verify { mockTorrentManager.initTorrentDownload() }
     }
 
     @Test
@@ -42,9 +46,13 @@ class TurboDownloaderTest {
         // When
         val turboDownloader = TurboDownloader.Builder(mockContext)
             .build()
+        
+        // At this point torrentManager is the real one, but not initialized
+        assertFalse("Torrent engine should not be initialized by default", turboDownloader.torrentManager.isInitialized)
+        
         turboDownloader.enableTorrent = false
 
         // Then
-        assertFalse("Torrent engine should not be initialized", turboDownloader.getTorrentManager().isInitialized)
+        assertFalse("Torrent engine should still not be initialized", turboDownloader.torrentManager.isInitialized)
     }
 }
