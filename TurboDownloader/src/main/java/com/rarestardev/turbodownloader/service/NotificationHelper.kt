@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.rarestardev.turbodownloader.R
 import com.rarestardev.turbodownloader.state.DownloadId
+import com.rarestardev.turbodownloader.state.DownloadStatus
 import kotlin.jvm.java
 
 internal object NotificationHelper {
@@ -68,15 +69,17 @@ internal object NotificationHelper {
             .build()
     }
 
-    fun create(context: Context, id: DownloadId, progress: Int): Notification {
+    fun create(context: Context, id: DownloadId, progress: Int, status: DownloadStatus = DownloadStatus.RUNNING): Notification {
         createChannel(context)
+        val title = when (status) {
+            DownloadStatus.SEEDING -> "در حال سیدی‌دهی (تورنت)"
+            else -> "در حال دانلود"
+        }
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(
                 android.R.drawable.stat_sys_download
             )
-            .setContentTitle(
-                "در حال دانلود"
-            )
+            .setContentTitle(title)
             .setContentText(
                 "پیشرفت: $progress%"
             )

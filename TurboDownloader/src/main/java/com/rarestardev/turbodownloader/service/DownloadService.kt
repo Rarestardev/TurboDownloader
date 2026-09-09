@@ -67,7 +67,8 @@ internal class DownloadService : Service() {
                                     NotificationHelper.create(
                                         this@DownloadService,
                                         id,
-                                        state.progress.percent
+                                        state.progress.percent,
+                                        state.status
                                     )
                                 )
 
@@ -78,7 +79,8 @@ internal class DownloadService : Service() {
                                     NotificationHelper.create(
                                         this@DownloadService,
                                         id,
-                                        state.progress.percent
+                                        state.progress.percent,
+                                        state.status
                                     )
                                 )
                             }
