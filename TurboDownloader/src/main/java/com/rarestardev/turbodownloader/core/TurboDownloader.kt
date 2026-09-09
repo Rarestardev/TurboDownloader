@@ -30,6 +30,28 @@ class TurboDownloader private constructor(
     private val manager = ChunkDownloadApi.get(context)
     private var notificationListener: DownloadNotificationListener? = null
     private var connectionListener: NetworkConnectionListener? = null
+    private val torrentManager = TorrentManager(context)
+
+    /**
+     * Enables or disables torrent download capability.
+     * When set to true, it initializes the torrent engine if not already initialized.
+     */
+    var enableTorrent: Boolean = false
+        set(value) {
+            field = value
+            if (value && !torrentManager.isInitialized) {
+                torrentManager.initTorrentDownload()
+            }
+        }
+
+    /**
+     * Internal getter for TorrentManager used for unit testing.
+     */
+    internal fun getTorrentManager() = torrentManager
+
+    init {
+        // Initialization logic
+    }
 
     suspend fun startDownload(
         url: String,
