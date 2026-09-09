@@ -118,6 +118,19 @@ class MainActivity : ComponentActivity() {
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
 
+        // Observe for failures and show Toast
+        LaunchedEffect(observerState) {
+            observerState.values.forEach { state ->
+                if (state is DownloadState.Failed) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Error: ${state.error?.message ?: "Unknown error"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+
         LaunchedEffect(downloader.hasNotificationPermission()) {
             hasPermission = downloader.hasNotificationPermission()
         }
@@ -138,6 +151,26 @@ class MainActivity : ComponentActivity() {
                     contentDescription = null,
                     modifier = Modifier.size(60.dp)
                 )
+
+                // Torrent Status Indicator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(
+                                if (downloader.enableTorrent) Color.Green else Color.Red,
+                                shape = RoundedCornerShape(6.dp)
+                            )
+                    )
+                    Text(
+                        text = if (downloader.enableTorrent) "Torrent Engine Active" else "Torrent Engine Disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (downloader.enableTorrent) Color.Green else Color.Red
+                    )
+                }
 
                 OutlinedTextField(
                     value = urlAddressState,
@@ -222,7 +255,7 @@ class MainActivity : ComponentActivity() {
                             "udp://tracker.moeking.me:6969/announce"
                         ).joinToString("") { "&tr=${Uri.encode(it)}" }
 
-                        val magnetLink = "magnet:?xt=urn:btih:6a71020755f115ce920c784e1b730f76906a5068&dn=debian-12.7.0-amd64-netinst.iso$trackers"
+                        val magnetLink = "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent"
                         
                         urlAddressState = magnetLink
                         scope.launch {
