@@ -69,11 +69,11 @@ internal object NotificationHelper {
             .build()
     }
 
-    fun create(context: Context, id: DownloadId, progress: Int, status: DownloadStatus = DownloadStatus.RUNNING): Notification {
+    fun create(context: Context, id: DownloadId, progress: Int, fileName: String = "در حال دانلود", status: DownloadStatus = DownloadStatus.RUNNING): Notification {
         createChannel(context)
         val title = when (status) {
-            DownloadStatus.SEEDING -> "در حال سیدی‌دهی (تورنت)"
-            else -> "در حال دانلود"
+            DownloadStatus.SEEDING -> "Seeding: $fileName"
+            else -> fileName
         }
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(

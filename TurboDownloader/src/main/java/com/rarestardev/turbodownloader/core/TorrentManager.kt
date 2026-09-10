@@ -13,6 +13,7 @@ import org.libtorrent4j.*
 import org.libtorrent4j.alerts.Alert
 import org.libtorrent4j.alerts.AlertType
 import org.libtorrent4j.alerts.TorrentFinishedAlert
+import org.libtorrent4j.swig.settings_pack
 import org.libtorrent4j.swig.torrent_flags_t
 import java.io.File
 
@@ -40,21 +41,30 @@ class TorrentManager(private val context: Context) {
         override fun types(): IntArray = intArrayOf(
             AlertType.TORRENT_FINISHED.swig(),
             AlertType.METADATA_RECEIVED.swig(),
-            AlertType.DHT_BOOTSTRAP.swig()
+            AlertType.DHT_BOOTSTRAP.swig(),
+            AlertType.TRACKER_REPLY.swig(),
+            AlertType.TRACKER_ERROR.swig(),
+            AlertType.PEER_DISCONNECTED.swig()
         )
 
         override fun alert(alert: Alert<*>) {
             when (alert.type()) {
                 AlertType.TORRENT_FINISHED -> {
                     if (alert is TorrentFinishedAlert) {
-                        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent finished: ${alert.handle().status().name()}")
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent finished: ${alert.handle().status().name()}")
                     }
                 }
                 AlertType.METADATA_RECEIVED -> {
-                    Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Metadata received for torrent")
+                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Metadata received for torrent")
                 }
                 AlertType.DHT_BOOTSTRAP -> {
-                    Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "DHT bootstrapped successfully.")
+                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "DHT bootstrapped successfully.")
+                }
+                AlertType.TRACKER_REPLY -> {
+                    Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker reply: ${alert.message()}")
+                }
+                AlertType.TRACKER_ERROR -> {
+                    Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker error: ${alert.message()}")
                 }
                 else -> {}
             }
@@ -66,18 +76,29 @@ class TorrentManager(private val context: Context) {
      * This method is called if torrent support is enabled in the TurboDownloader settings.
      */
     fun initTorrentDownload() {
-        if (!isInitialized) {
+        if (isInitialized) return
+
+        try {
             Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent download engine initializing...")
             _sessionManager = SessionManager()
-            
+
             val settings = SettingsPack()
             settings.setEnableDht(true)
-            // Use common open trackers/nodes to speed up bootstrapping
-            settings.setDhtBootstrapNodes("router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881")
-            
+            settings.setEnableLsd(true)
+
+            // Enable UPnP and NAT-PMP safely using swig values
+            settings.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
+            settings.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
+
+            settings.setDhtBootstrapNodes("router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881,router.bitcomet.com:6881,dht.aelitis.com:6881")
+
             sessionManager.addListener(alertListener)
             sessionManager.start(SessionParams(settings))
             isInitialized = true
+            Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent engine initialized successfully.")
+        } catch (e: Throwable) {
+            Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Failed to initialize Torrent Engine", e)
+            isInitialized = false
         }
     }
 
@@ -126,6 +147,7 @@ class TorrentManager(private val context: Context) {
                     val totalBytes = if (status.total() > 0) status.total() else 0L
                     val downloaded = status.totalDone()
                     val speed = status.downloadPayloadRate().toLong()
+                    val peers = status.numPeers()
                     
                     val downloadStatus = when {
                         status.state() == TorrentStatus.State.SEEDING -> DownloadStatus.SEEDING
@@ -134,6 +156,7 @@ class TorrentManager(private val context: Context) {
                     }
 
                     if (downloadStatus == DownloadStatus.COMPLETED) {
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id completed and moved to seeding")
                         downloadManager.updateDownloadStatusInternal(id, DownloadStatus.COMPLETED)
                         downloadManager.update(id, DownloadState.Completed(id, Uri.fromFile(File(handle.savePath(), status.name()))))
                         break
@@ -143,6 +166,8 @@ class TorrentManager(private val context: Context) {
                     if (status.hasMetadata() && totalBytes > 0) {
                         downloadManager.updateDownloadInfoInternal(id, status.name(), totalBytes)
                     }
+
+                    Log.v(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id: $downloaded / $totalBytes bytes, Speed: $speed, Peers: $peers")
 
                     downloadManager.update(id, DownloadState.Running(
                         id, 

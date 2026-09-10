@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
 
 internal class DownloadService : Service() {
@@ -21,6 +22,7 @@ internal class DownloadService : Service() {
     private lateinit var manager: DownloadManager
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var foregroundStarted = false
+    private val fileNameCache = mutableMapOf<DownloadId, String>()
 
     override fun onCreate() {
         super.onCreate()
@@ -43,16 +45,6 @@ internal class DownloadService : Service() {
                     newManager
                 }
 
-        /*try {
-            startForeground(
-                1,
-                NotificationHelper.createForeground(this)
-            )
-            Log.d("DownloadService", "Foreground started")
-        } catch (e: Exception) {
-            Log.e("DownloadService", "startForeground failed", e)
-        }*/
-
         serviceScope.launch {
             manager.state.collect { map ->
                 map.forEach { (id, state) ->
@@ -60,14 +52,24 @@ internal class DownloadService : Service() {
 
                     when (state) {
                         is DownloadState.Running -> {
-                            if (!foregroundStarted){
+                            val fileName = if (fileNameCache.containsKey(id)) {
+                                fileNameCache[id]!!
+                            } else {
+                                val name = withContext(Dispatchers.IO) {
+                                    db.dao().getDownload(id.value)?.fileName
+                                } ?: "فایل در حال دانلود"
+                                fileNameCache[id] = name
+                                name
+                            }
 
+                            if (!foregroundStarted){
                                 startForeground(
                                     notificationId(id),
                                     NotificationHelper.create(
                                         this@DownloadService,
                                         id,
                                         state.progress.percent,
+                                        fileName,
                                         state.status
                                     )
                                 )
@@ -80,6 +82,7 @@ internal class DownloadService : Service() {
                                         this@DownloadService,
                                         id,
                                         state.progress.percent,
+                                        fileName,
                                         state.status
                                     )
                                 )

@@ -44,6 +44,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -117,16 +118,22 @@ class MainActivity : ComponentActivity() {
         val queuedList by downloader.queuedListDownload().collectAsState(emptyList())
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
+        var shownErrors by remember { mutableStateOf(setOf<String>()) }
+        var torrentEnabled by remember { mutableStateOf(downloader.enableTorrent) }
 
         // Observe for failures and show Toast
         LaunchedEffect(observerState) {
             observerState.values.forEach { state ->
                 if (state is DownloadState.Failed) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Error: ${state.error?.message ?: "Unknown error"}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val errorMsg = state.error?.message ?: "Unknown error"
+                    if (!shownErrors.contains(errorMsg)) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Error: $errorMsg",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        shownErrors = shownErrors + errorMsg
+                    }
                 }
             }
         }
@@ -152,23 +159,32 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.size(60.dp)
                 )
 
-                // Torrent Status Indicator
+                // Torrent Status Indicator & Switch
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .size(12.dp)
                             .background(
-                                if (downloader.enableTorrent) Color.Green else Color.Red,
+                                if (torrentEnabled) Color.Green else Color.Red,
                                 shape = RoundedCornerShape(6.dp)
                             )
                     )
                     Text(
-                        text = if (downloader.enableTorrent) "Torrent Engine Active" else "Torrent Engine Disabled",
+                        text = if (torrentEnabled) "Torrent Engine Active" else "Torrent Engine Disabled",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (downloader.enableTorrent) Color.Green else Color.Red
+                        color = if (torrentEnabled) Color.Green else Color.Red,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = torrentEnabled,
+                        onCheckedChange = {
+                            torrentEnabled = it
+                            downloader.enableTorrent = it
+                        }
                     )
                 }
 
@@ -242,7 +258,7 @@ class MainActivity : ComponentActivity() {
 
                 TextButton(
                     onClick = {
-                        // Improved Magnet link with explicit public trackers for better connectivity in restrictive networks
+                        // Improved Magnet link with explicit public trackers for better connectivity
                         val trackers = listOf(
                             "udp://tracker.opentrackr.org:1337/announce",
                             "udp://9.rarbg.com:2810/announce",
@@ -255,7 +271,8 @@ class MainActivity : ComponentActivity() {
                             "udp://tracker.moeking.me:6969/announce"
                         ).joinToString("") { "&tr=${Uri.encode(it)}" }
 
-                        val magnetLink = "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent"
+                        // Debian 12.7.0 netinst ISO - Good for testing metadata and connectivity
+                        val magnetLink = "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel" + trackers
                         
                         urlAddressState = magnetLink
                         scope.launch {
@@ -426,7 +443,11 @@ class MainActivity : ComponentActivity() {
                 )
 
                 Text(
-                    text = "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}",
+                    text = if (entity.status == DownloadStatus.SEEDING) {
+                        "Seeding... • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed"
+                    } else {
+                        "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}"
+                    },
                     color = Color.LightGray,
                     fontSize = 12.sp
                 )

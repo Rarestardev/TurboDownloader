@@ -45,8 +45,14 @@ class TurboDownloader private constructor(
     var enableTorrent: Boolean = false
         set(value) {
             field = value
-            if (value && !torrentManager.isInitialized) {
-                torrentManager.initTorrentDownload()
+            if (value) {
+                if (!torrentManager.isInitialized) {
+                    torrentManager.initTorrentDownload()
+                }
+            } else {
+                if (torrentManager.isInitialized) {
+                    torrentManager.stop()
+                }
             }
         }
 
