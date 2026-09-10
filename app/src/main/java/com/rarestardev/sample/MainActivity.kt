@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -256,33 +257,35 @@ class MainActivity : ComponentActivity() {
                     Text("Added to queue")
                 }
 
-                TextButton(
-                    onClick = {
-                        // Improved Magnet link with explicit public trackers for better connectivity
-                        val trackers = listOf(
-                            "udp://tracker.opentrackr.org:1337/announce",
-                            "udp://9.rarbg.com:2810/announce",
-                            "udp://tracker.openbittorrent.com:6969/announce",
-                            "http://tracker.openbittorrent.com:80/announce",
-                            "udp://opentracker.i2p.rocks:6969/announce",
-                            "udp://tracker.torrent.eu.org:451/announce",
-                            "udp://open.stealth.si:80/announce",
-                            "udp://exodus.desync.com:6969/announce",
-                            "udp://tracker.moeking.me:6969/announce"
-                        ).joinToString("") { "&tr=${Uri.encode(it)}" }
+                if (torrentEnabled) {
+                    TextButton(
+                        onClick = {
+                            // Improved Magnet link with explicit public trackers for better connectivity
+                            val trackers = listOf(
+                                "udp://tracker.opentrackr.org:1337/announce",
+                                "udp://9.rarbg.com:2810/announce",
+                                "udp://tracker.openbittorrent.com:6969/announce",
+                                "http://tracker.openbittorrent.com:80/announce",
+                                "udp://opentracker.i2p.rocks:6969/announce",
+                                "udp://tracker.torrent.eu.org:451/announce",
+                                "udp://open.stealth.si:80/announce",
+                                "udp://exodus.desync.com:6969/announce",
+                                "udp://tracker.moeking.me:6969/announce"
+                            ).joinToString("") { "&tr=${Uri.encode(it)}" }
 
-                        // Debian 12.7.0 netinst ISO - Good for testing metadata and connectivity
-                        val magnetLink = "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel" + trackers
-                        
-                        urlAddressState = magnetLink
-                        scope.launch {
-                            downloader.startDownload(magnetLink)
-                            Toast.makeText(this@MainActivity, "Testing Torrent Download...", Toast.LENGTH_SHORT).show()
-                            urlAddressState = ""
+                            // Debian 12.7.0 netinst ISO - Good for testing metadata and connectivity
+                            val magnetLink = "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel" + trackers
+                            
+                            urlAddressState = magnetLink
+                            scope.launch {
+                                downloader.startDownload(magnetLink)
+                                Toast.makeText(this@MainActivity, "Testing Torrent Download...", Toast.LENGTH_SHORT).show()
+                                urlAddressState = ""
+                            }
                         }
+                    ) {
+                        Text("Test Torrent (Debian + Trackers)", color = Color.Magenta)
                     }
-                ) {
-                    Text("Test Torrent (Debian + Trackers)", color = Color.Magenta)
                 }
 
                 Spacer(Modifier.height(36.dp))
@@ -406,6 +409,18 @@ class MainActivity : ComponentActivity() {
             else -> "0 KB"
         }
 
+        val peers = when (state) {
+            is DownloadState.Running -> state.progress.peers
+            else -> 0
+        }
+
+        val statusText = when {
+            state is DownloadState.Failed -> "Error: ${state.error?.message ?: "Unknown"}"
+            entity.status == DownloadStatus.CONNECTING -> "Connecting..."
+            entity.status == DownloadStatus.SEEDING -> "Seeding..."
+            else -> entity.status.name
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -418,11 +433,12 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = when (state) {
-                    is DownloadState.Running -> Icons.Default.Downloading
-                    is DownloadState.Paused -> Icons.Default.Pause
-                    is DownloadState.Completed -> Icons.Default.Check
-                    is DownloadState.Failed -> Icons.Default.Error
+                imageVector = when {
+                    state is DownloadState.Running && entity.status == DownloadStatus.CONNECTING -> Icons.Default.Sync
+                    state is DownloadState.Running -> Icons.Default.Downloading
+                    state is DownloadState.Paused -> Icons.Default.Pause
+                    state is DownloadState.Completed -> Icons.Default.Check
+                    state is DownloadState.Failed -> Icons.Default.Error
                     else -> if (entity.status == DownloadStatus.SEEDING) Icons.Default.Check else Icons.Default.HourglassEmpty
                 },
                 contentDescription = null,
@@ -442,13 +458,19 @@ class MainActivity : ComponentActivity() {
                         .padding(vertical = 6.dp)
                 )
 
+                val detailsText = buildString {
+                    append("$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)}")
+                    if (entity.isTorrent && entity.status != DownloadStatus.COMPLETED) {
+                        append(" • Speed: $speed • Peers: $peers")
+                    } else if (!entity.isTorrent) {
+                        append(" • $speed")
+                    }
+                    append(" • $statusText")
+                }
+
                 Text(
-                    text = if (entity.status == DownloadStatus.SEEDING) {
-                        "Seeding... • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed"
-                    } else {
-                        "$progress% • ${formatSize(downloaded)} / ${formatSize(entity.totalBytes)} • $speed • ${entity.status.name}"
-                    },
-                    color = Color.LightGray,
+                    text = detailsText,
+                    color = if (state is DownloadState.Failed) Color.Red else Color.LightGray,
                     fontSize = 12.sp
                 )
             }

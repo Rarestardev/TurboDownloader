@@ -132,10 +132,15 @@ class TorrentManager(private val context: Context) {
                         val speed = status.downloadPayloadRate().toLong()
                         val peers = status.numPeers()
                         
-                        val downloadStatus = when {
+                        var downloadStatus = when {
                             status.state() == TorrentStatus.State.SEEDING -> DownloadStatus.SEEDING
                             status.isFinished -> DownloadStatus.COMPLETED
                             else -> DownloadStatus.RUNNING
+                        }
+
+                        // If we are "Running" but have 0 peers or no metadata, mark as "Connecting"
+                        if (downloadStatus == DownloadStatus.RUNNING && (peers == 0 || !status.hasMetadata())) {
+                            downloadStatus = DownloadStatus.CONNECTING
                         }
 
                         if (downloadStatus == DownloadStatus.COMPLETED) {
@@ -145,12 +150,15 @@ class TorrentManager(private val context: Context) {
                             break
                         }
 
+                        // Update status in DB if it changed (e.g. from CONNECTING to RUNNING)
+                        downloadManager.updateDownloadStatusInternal(id, downloadStatus)
+
                         // Update filename and size once metadata is available
                         if (status.hasMetadata() && totalBytes > 0) {
                             downloadManager.updateDownloadInfoInternal(id, status.name(), totalBytes)
                         }
 
-                        Log.v(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id: $downloaded / $totalBytes bytes, Speed: $speed, Peers: $peers")
+                        Log.v(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id: $downloaded / $totalBytes bytes, Speed: $speed, Peers: $peers, Status: $downloadStatus")
 
                         downloadManager.update(id, DownloadState.Running(
                             id, 
@@ -158,7 +166,8 @@ class TorrentManager(private val context: Context) {
                                 totalBytes = totalSizeOrUnknown(totalBytes),
                                 downloadBytes = downloaded,
                                 speedBytesPerSec = speed,
-                                status = downloadStatus
+                                status = downloadStatus,
+                                peers = peers
                             )
                         ))
                     }

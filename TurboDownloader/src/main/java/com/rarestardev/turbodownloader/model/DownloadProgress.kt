@@ -7,7 +7,8 @@ data class DownloadProgress(
     val downloadBytes: Long,
     val speedBytesPerSec: Long = 0L,
     val remainingTimeMillis: Long = 0L,
-    val status: DownloadStatus = DownloadStatus.RUNNING
+    val status: DownloadStatus = DownloadStatus.RUNNING,
+    val peers: Int = 0
 ){
     val percent : Int
         get() = if (totalBytes <= 0) 0 else ((downloadBytes * 100) / totalBytes).toInt()
