@@ -9,6 +9,7 @@ import com.rarestardev.turbodownloader.core.DownloadManager
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.storage.DownloadDatabase
+import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,15 +18,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
 
+/**
+ * Background service responsible for managing downloads and maintaining foreground status.
+ * It observes the download states from [DownloadManager] and updates notifications accordingly.
+ */
 internal class DownloadService : Service() {
 
     private lateinit var manager: DownloadManager
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var foregroundStarted = false
-    private val fileNameCache = mutableMapOf<DownloadId, String>()
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Satisfy foreground service requirements immediately
+        val initialNotification = NotificationHelper.createForeground(this)
+        startForeground(999, initialNotification)
+        foregroundStarted = true
+
         val db = Room.databaseBuilder(
             applicationContext,
             DownloadDatabase::class.java,
@@ -45,6 +55,13 @@ internal class DownloadService : Service() {
                     newManager
                 }
 
+        observeDownloadStates(db)
+    }
+
+    /**
+     * Observes changes in download states and updates notifications.
+     */
+    private fun observeDownloadStates(db: DownloadDatabase) {
         serviceScope.launch {
             manager.state.collect { map ->
                 map.forEach { (id, state) ->
@@ -52,41 +69,23 @@ internal class DownloadService : Service() {
 
                     when (state) {
                         is DownloadState.Running -> {
-                            val fileName = if (fileNameCache.containsKey(id)) {
-                                fileNameCache[id]!!
-                            } else {
-                                val name = withContext(Dispatchers.IO) {
-                                    db.dao().getDownload(id.value)?.fileName
-                                } ?: "فایل در حال دانلود"
-                                fileNameCache[id] = name
-                                name
-                            }
+                            val fileName = withContext(Dispatchers.IO) {
+                                db.dao().getDownload(id.value)?.fileName
+                            } ?: "File downloading..."
+                            
+                            val speedStr = FormatUtils.formatSpeed(state.progress.speedBytesPerSec)
+                            val peers = state.progress.peers
 
-                            if (!foregroundStarted){
-                                startForeground(
-                                    notificationId(id),
-                                    NotificationHelper.create(
-                                        this@DownloadService,
-                                        id,
-                                        state.progress.percent,
-                                        fileName,
-                                        state.status
-                                    )
-                                )
-
-                                foregroundStarted = true
-                            }else {
-                                nm.notify(
-                                    notificationId(id),
-                                    NotificationHelper.create(
-                                        this@DownloadService,
-                                        id,
-                                        state.progress.percent,
-                                        fileName,
-                                        state.status
-                                    )
-                                )
-                            }
+                            val notification = NotificationHelper.create(
+                                this@DownloadService,
+                                id,
+                                state.progress.percent,
+                                fileName,
+                                state.status,
+                                speedStr,
+                                peers
+                            )
+                            nm.notify(notificationId(id), notification)
                         }
 
                         is DownloadState.Paused -> {
@@ -119,9 +118,7 @@ internal class DownloadService : Service() {
                         }
 
                         is DownloadState.Cancelled -> {
-                            nm.cancel(
-                                notificationId(id)
-                            )
+                            nm.cancel(notificationId(id))
                         }
 
                         else -> {}
@@ -131,6 +128,9 @@ internal class DownloadService : Service() {
         }
     }
 
+    /**
+     * Handles intent actions for pausing, resuming, and cancelling downloads from notifications.
+     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         val id = intent?.getStringExtra("DOWNLOAD_ID")

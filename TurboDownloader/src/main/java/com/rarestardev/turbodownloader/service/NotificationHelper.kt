@@ -14,6 +14,9 @@ import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadStatus
 import kotlin.jvm.java
 
+/**
+ * Helper class for creating and managing Android Notifications for the download service.
+ */
 internal object NotificationHelper {
     private const val CHANNEL_ID = "turbodownloader_channel"
 
@@ -22,18 +25,24 @@ internal object NotificationHelper {
     const val ACTION_CANCEL = "ACTION_CANCEL"
     const val ACTION_CLICK = "ACTION_CLICK"
 
+    /**
+     * Ensures the notification channel is created for Android O and above.
+     */
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "turbodownloader",
-                NotificationManager.IMPORTANCE_DEFAULT
+                "Downloads",
+                NotificationManager.IMPORTANCE_LOW // Use LOW to avoid sound on every update
             )
             val nm = context.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
     }
 
+    /**
+     * Creates a simple foreground notification to keep the service alive.
+     */
     @SuppressLint("LaunchActivityFromNotification")
     fun createForeground(
         context: Context
@@ -48,140 +57,110 @@ internal object NotificationHelper {
             0,
             intent,
             PendingIntent.FLAG_MUTABLE
-//                    or PendingIntent.FLAG_IMMUTABLE
         )
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.download_ic)
-            .setContentTitle(
-                "Turbo Downloader"
-            )
-            .setContentText(
-                "Download service running"
-            )
+            .setContentTitle("Turbo Downloader")
+            .setContentText("Monitoring downloads...")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setShowWhen(false)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
-    fun create(context: Context, id: DownloadId, progress: Int, fileName: String = "در حال دانلود", status: DownloadStatus = DownloadStatus.RUNNING): Notification {
+    /**
+     * Creates or updates a notification for an active download.
+     */
+    fun create(
+        context: Context, 
+        id: DownloadId, 
+        progress: Int, 
+        fileName: String = "Downloading...", 
+        status: DownloadStatus = DownloadStatus.RUNNING,
+        speed: String = "",
+        peers: Int = 0
+    ): Notification {
         createChannel(context)
+        
         val title = when (status) {
             DownloadStatus.SEEDING -> "Seeding: $fileName"
+            DownloadStatus.CONNECTING -> "Connecting: $fileName"
             else -> fileName
         }
+
+        val contentText = buildString {
+            append("Progress: $progress%")
+            if (speed.isNotEmpty()) append(" • $speed")
+            if (peers > 0) append(" • Peers: $peers")
+        }
+
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(
-                android.R.drawable.stat_sys_download
-            )
+            .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
-            .setContentText(
-                "پیشرفت: $progress%"
-            )
-            .setProgress(
-                100,
-                progress,
-                false
-            )
+            .setContentText(contentText)
+            .setProgress(100, progress, status == DownloadStatus.CONNECTING)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setContentIntent(notificationClickIntent(context, id))
             .addAction(
                 android.R.drawable.ic_media_pause,
-                "توقف",
-                actionIntent(
-                    context,
-                    id,
-                    ACTION_PAUSE
-                )
+                "Pause",
+                actionIntent(context, id, ACTION_PAUSE)
             )
-            /*.addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "لغو",
-                actionIntent(
-                    context,
-                    id,
-                    ACTION_CANCEL
-                )
-            )*/
             .build()
     }
 
-
+    /**
+     * Creates a notification for a paused download.
+     */
     fun createPaused(
         context: Context,
         id: DownloadId,
         progress: Float
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(
-                android.R.drawable.ic_media_play
-            )
-            .setContentTitle(
-                "دانلود متوقف شد"
-            )
-            .setContentText(
-                "$progress%"
-            )
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("Download Paused")
+            .setContentText("Progress: $progress%")
             .setOngoing(true)
             .addAction(
                 android.R.drawable.ic_media_play,
-                "ادامه",
-                actionIntent(
-                    context,
-                    id,
-                    ACTION_RESUME
-                )
+                "Resume",
+                actionIntent(context, id, ACTION_RESUME)
             )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            /*.addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "لغو",
-                actionIntent(
-                    context,
-                    id,
-                    ACTION_CANCEL
-                )
-            )*/
             .build()
     }
 
-
+    /**
+     * Creates a notification for a completed download.
+     */
     fun createCompleted(
         context: Context
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(
-                android.R.drawable.stat_sys_download_done
-            )
-            .setContentTitle(
-                "دانلود کامل شد"
-            )
-            .setContentText(
-                "فایل آماده است"
-            )
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Download Complete")
+            .setContentText("File is ready.")
             .setAutoCancel(true)
             .build()
     }
 
-
+    /**
+     * Creates a notification for a failed download.
+     */
     fun createFailed(
         context: Context
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(
-                android.R.drawable.stat_notify_error
-            )
-            .setContentTitle(
-                "خطا در دانلود"
-            )
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle("Download Failed")
+            .setContentText("An error occurred during download.")
             .setAutoCancel(true)
             .build()
     }
@@ -191,46 +170,30 @@ internal object NotificationHelper {
         id: DownloadId,
         action: String
     ): PendingIntent {
-        val intent = Intent(
-            context,
-            DownloadReceiver::class.java
-        )
-
-        intent.action = action
-
-        intent.putExtra(
-            "DOWNLOAD_ID",
-            id.value
-        )
+        val intent = Intent(context, DownloadReceiver::class.java).apply {
+            this.action = action
+            putExtra("DOWNLOAD_ID", id.value)
+        }
 
         return PendingIntent.getBroadcast(
             context,
             id.value.hashCode() + action.hashCode(),
             intent,
             PendingIntent.FLAG_MUTABLE
-//                    or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
     private fun notificationClickIntent(context: Context, id: DownloadId): PendingIntent? {
-        val clickIntent =
-            Intent(
-                context,
-                DownloadReceiver::class.java
-            ).apply {
-                action = ACTION_CLICK
-                putExtra(
-                    "DOWNLOAD_ID",
-                    id.value
-                )
-            }
+        val clickIntent = Intent(context, DownloadReceiver::class.java).apply {
+            action = ACTION_CLICK
+            putExtra("DOWNLOAD_ID", id.value)
+        }
 
         return PendingIntent.getBroadcast(
             context,
             id.value.hashCode(),
             clickIntent,
             PendingIntent.FLAG_MUTABLE
-//                    or PendingIntent.FLAG_IMMUTABLE
         )
     }
 }

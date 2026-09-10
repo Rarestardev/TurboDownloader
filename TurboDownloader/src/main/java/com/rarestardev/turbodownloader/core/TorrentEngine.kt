@@ -9,18 +9,29 @@ import org.libtorrent4j.swig.settings_pack
 
 /**
  * Singleton engine for managing the libtorrent session.
- * Ensures only one session exists per process to prevent native crashes.
+ * Ensures only one session exists per process to prevent native crashes and port conflicts.
+ * It handles global settings such as DHT, LSD, and memory limits.
  */
 internal object TorrentEngine {
     private var _sessionManager: SessionManager? = null
+    
+    /**
+     * Lazy-initialized libtorrent [SessionManager].
+     */
     val sessionManager: SessionManager
         get() = _sessionManager ?: synchronized(this) {
             _sessionManager ?: SessionManager().also { _sessionManager = it }
         }
 
+    /**
+     * Reflects the current initialization state of the engine.
+     */
     var isInitialized: Boolean = false
         private set
 
+    /**
+     * Starts the libtorrent session with optimized settings for Android (Low Memory Profile).
+     */
     fun initialize() {
         if (isInitialized) return
         
@@ -64,6 +75,9 @@ internal object TorrentEngine {
         }
     }
 
+    /**
+     * Safely stops the session and releases native resources.
+     */
     fun stop() {
         if (isInitialized) {
             try {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
@@ -15,6 +16,7 @@ import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadStatus
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
+import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,14 @@ import java.io.File
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * Core manager for handling download operations, state updates, and background service lifecycle.
+ * This class coordinates between the [ChunkDownloader], [TorrentManager], and the Room database.
+ *
+ * @property dao The Data Access Object for Room database interactions.
+ * @property scope The coroutine scope for managing background tasks.
+ * @property context The application context.
+ */
 class DownloadManager(
     private val dao: DownloadDao,
     private val scope: CoroutineScope,
@@ -37,14 +47,26 @@ class DownloadManager(
 ) {
     private val downloader = ChunkDownloader(dao, context)
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
+    
+    /**
+     * Exposes the current state of all active downloads as a [StateFlow].
+     */
     val state = _state.asStateFlow()
+    
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
     internal var internalListener: com.rarestardev.turbodownloader.listener.DownloadInternalListener? = null
     
-    // Manage torrent engine centrally
+    /**
+     * Singleton engine reference for torrent operations.
+     */
     internal val torrentManager = TorrentManager(context)
 
+    /**
+     * Enqueues a new download request (HTTP/HTTPS).
+     * @param request The download configuration including URI and filename.
+     * @return The unique [DownloadId] assigned to this download.
+     */
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
         val id = DownloadId(UUID.randomUUID().toString())
@@ -83,6 +105,10 @@ class DownloadManager(
         return id
     }
 
+    /**
+     * Resumes a previously paused or failed download.
+     * @param id The ID of the download to resume.
+     */
     fun resume(id: DownloadId) {
         ensureServiceRunning()
         val job = scope.launch(Dispatchers.IO) {
@@ -91,20 +117,29 @@ class DownloadManager(
             pauseFlags[id.value] = false
             val entity = dao.getDownload(id.value) ?: return@launch
             dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            executeDownload(entity)
+            
+            if (entity.isTorrent) {
+                val saveDir = getPublicDownloadDir()
+                torrentManager.download(id, entity.url, saveDir, this@DownloadManager)
+            } else {
+                executeDownload(entity)
+            }
         }
 
         jobs[id.value] = job
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
     }
 
+    /**
+     * Pauses an active download.
+     * @param id The ID of the download to pause.
+     */
     fun pause(id: DownloadId) {
         pauseFlags[id.value] = true
         scope.launch(Dispatchers.IO) {
             dao.updateStatus(id.value, DownloadStatus.PAUSED.name)
             val entity = dao.getDownload(id.value) ?: return@launch
             val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-            /*update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))*/
             update(
                 id,
                 DownloadState.Paused(
@@ -121,22 +156,22 @@ class DownloadManager(
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
     }
 
+    /**
+     * Cancels an active download and cleans up associated resources.
+     * @param id The ID of the download to cancel.
+     */
     fun cancel(id: DownloadId) {
         scope.launch(Dispatchers.IO) {
             jobs[id.value]?.cancel()
             jobs.remove(id.value)
             pauseFlags[id.value] = false
 
-            // Check if it's a torrent
             val entity = dao.getDownload(id.value)
             if (entity?.isTorrent == true) {
                 internalListener?.onDownloadCancelled(id)
             }
 
-            update(
-                id,
-                DownloadState.Cancelled(id)
-            )
+            update(id, DownloadState.Cancelled(id))
 
             dao.deleteChunks(id.value)
             dao.deleteDownload(id.value)
@@ -146,86 +181,11 @@ class DownloadManager(
 
             stopServiceIfIdle()
         }
-
-        Log.w(
-            TurboConstants.TURBO_DOWNLOADER_LOG,
-            "download cancelled and delete file and chunk"
-        )
     }
 
-    private fun enqueueInternal(entity: DownloadEntity) {
-        val id = DownloadId(entity.id)
-
-        val job = scope.launch(Dispatchers.IO) {
-            try {
-                var downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                var lastByte = downloaded
-                var lastTime = System.currentTimeMillis()
-
-                update(
-                    id,
-                    DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloaded))
-                )
-
-
-                val file = downloader.download(entity, onProgress = { chunkBytes ->
-                    downloaded += chunkBytes
-
-                    val now = System.currentTimeMillis()
-                    val elapsed = now - lastTime
-
-                    if (elapsed >= 1000) {
-                        val speed = ((downloaded - lastByte) * 1000L) / elapsed
-                        val remainBytes = entity.totalBytes - downloaded
-                        val remainTime = if (speed > 0) remainBytes * 1000L / speed else 0L
-
-                        lastByte = downloaded
-                        lastTime = now
-
-                        update(
-                            id = id,
-                            state = DownloadState.Running(
-                                id, DownloadProgress(
-                                    totalBytes = entity.totalBytes,
-                                    downloadBytes = downloaded,
-                                    speedBytesPerSec = speed,
-                                    remainingTimeMillis = remainTime,
-                                    status = DownloadStatus.RUNNING
-                                )
-                            )
-                        )
-                    }
-                }) {
-                    pauseFlags[id.value] == true
-                }
-                if (pauseFlags[id.value] == true) {
-                    update(
-                        id,
-                        DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded))
-                    )
-                    return@launch
-                }
-
-                dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
-                update(id, DownloadState.Completed(id, file))
-
-                Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "enqueueInternal")
-            } catch (e: Exception) {
-                dao.updateStatus(id.value, DownloadStatus.FAILED.name)
-                update(id, DownloadState.Failed(id, e))
-            } finally {
-                jobs.remove(id.value)
-
-                if (pauseFlags[id.value] != true) {
-                    val tempDir = File(context.cacheDir, "${id.value}_tmp")
-                    if (tempDir.exists()) tempDir.deleteRecursively()
-                }
-            }
-        }
-
-        jobs[id.value] = job
-    }
-
+    /**
+     * Internal thread-safe method to update the observable state flow.
+     */
     internal fun update(id: DownloadId, state: DownloadState) {
         synchronized(_state) {
             val map = _state.value.toMutableMap()
@@ -234,18 +194,27 @@ class DownloadManager(
         }
     }
 
+    /**
+     * Internal method to insert a download record into the database.
+     */
     internal fun insertDownloadInternal(entity: DownloadEntity) {
         scope.launch(Dispatchers.IO) {
             dao.insertDownload(entity)
         }
     }
 
+    /**
+     * Updates download metadata (name and size) in the database and current state.
+     */
     internal fun updateDownloadInfoInternal(id: DownloadId, name: String, totalBytes: Long) {
         scope.launch(Dispatchers.IO) {
             dao.updateInfo(id.value, name, totalBytes)
         }
     }
 
+    /**
+     * Updates the persistent status of a download in the database.
+     */
     internal fun updateDownloadStatusInternal(id: DownloadId, status: DownloadStatus) {
         scope.launch(Dispatchers.IO) {
             dao.updateStatus(id.value, status.name)
@@ -254,34 +223,36 @@ class DownloadManager(
 
     private fun ensureServiceRunning() {
         val intent = Intent(context, DownloadService::class.java)
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ContextCompat.startForegroundService(context, intent)
         } else {
             context.startService(intent)
         }
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "ensureServiceRunning.")
     }
 
     private fun stopServiceIfIdle() {
-        val active =
-            _state.value.values.any { it is DownloadState.Running || it is DownloadState.Paused }
+        val active = _state.value.values.any { 
+            it is DownloadState.Running || it is DownloadState.Paused || it is DownloadState.Queued 
+        }
         if (!active) {
             val intent = Intent(context, DownloadService::class.java)
             context.stopService(intent)
         }
-
-        Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "stop service idle.")
     }
 
-    fun allDownloads(): Flow<List<DownloadEntity>> {
-        return dao.getAllDownloads()
-    }
+    /**
+     * Returns a [Flow] observing all downloads in the system.
+     */
+    fun allDownloads(): Flow<List<DownloadEntity>> = dao.getAllDownloads()
 
-    fun allQueuedList(): Flow<List<DownloadEntity>>{
-        return dao.getAllQueuedDownloads()
-    }
+    /**
+     * Returns a [Flow] observing all queued downloads.
+     */
+    fun allQueuedList(): Flow<List<DownloadEntity>> = dao.getAllQueuedDownloads()
 
+    /**
+     * Cleans up resources. Keeps the engine alive if background downloads are active.
+     */
     fun release() {
         scope.launch(Dispatchers.IO) {
             val downloads = dao.getAllDownloadsOnce()
@@ -291,26 +262,27 @@ class DownloadManager(
                     if (tempDir.exists()) tempDir.deleteRecursively()
                 }
             }
-            // Stop torrent engine safely
-            torrentManager.stop()
+            
+            val hasActiveDownloads = _state.value.values.any { 
+                it is DownloadState.Running || it is DownloadState.Paused || it is DownloadState.Queued || 
+                (it is DownloadState.Running && it.status == DownloadStatus.CONNECTING)
+            }
+            
+            if (!hasActiveDownloads) {
+                torrentManager.stop()
+            }
         }
-
-        Log.d(
-            TurboConstants.TURBO_DOWNLOADER_LOG,
-            "release completed"
-        )
     }
 
-    private suspend fun executeDownload(entity: DownloadEntity){
+    private suspend fun executeDownload(entity: DownloadEntity) {
         val id = DownloadId(entity.id)
         val maxRetries = 3
         var currentAttempt = 1
         var downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
 
-        while (currentAttempt <= maxRetries){
-            if (pauseFlags[id.value] == true){
-                val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+        while (currentAttempt <= maxRetries) {
+            if (pauseFlags[id.value] == true) {
+                update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloadedBeforeRetry)))
                 return
             }
 
@@ -359,67 +331,52 @@ class DownloadManager(
 
             } catch (e: Exception) {
                 if (pauseFlags[id.value] == true) {
-                    val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloadedBeforeRetry)))
                     return
                 }
-                @Suppress("DEPRECATION")
-                if (!isActive) return   // cancellation
-
-                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Download failed (attempt $currentAttempt/$maxRetries): ${e.message}")
-
+                
                 if (currentAttempt < maxRetries) {
-                    if (currentAttempt < maxRetries - 1) {
-                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying resume in 3s...")
-                        delay(3.seconds)
-                        downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
-                    } else {
-                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Retrying full restart in 3s...")
-                        delay(3.seconds)
+                    delay(3.seconds)
+                    if (currentAttempt == maxRetries - 1) {
                         dao.deleteChunks(id.value)
-                        val tempDir = File(context.filesDir, "chunks_${entity.id}")
-                        if (tempDir.exists()) tempDir.deleteRecursively()
                         downloadedBeforeRetry = 0
+                    } else {
+                        downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
                     }
-
-                    update(id, DownloadState.Running(id, DownloadProgress(entity.totalBytes, downloadedBeforeRetry)))
                     currentAttempt++
                 } else {
                     dao.updateStatus(id.value, DownloadStatus.FAILED.name)
                     update(id, DownloadState.Failed(id, e))
-                    val tempDir = File(context.filesDir, "chunks_${entity.id}")
-                    if (tempDir.exists()) tempDir.deleteRecursively()
                     return
                 }
             }
         }
     }
 
+    /**
+     * Removes a download record and deletes associated physical and temporary files.
+     * This method works regardless of the current download status.
+     *
+     * @param id The unique ID of the download.
+     * @param deleteFile Whether to remove the downloaded file from public storage.
+     */
     fun removeCompleted(id: DownloadId, deleteFile: Boolean) {
         scope.launch(Dispatchers.IO) {
-            val entity = dao.getDownload(id.value)
-            if (entity == null) {
-                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not found")
-                return@launch
-            }
+            val entity = dao.getDownload(id.value) ?: return@launch
 
-            // Allow removal if it's a torrent (even if not finished) or if it's completed
-            if (!entity.isTorrent && entity.status != DownloadStatus.COMPLETED) {
-                Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Download not completed")
-                return@launch
-            }
+            jobs[id.value]?.cancel()
+            jobs.remove(id.value)
 
             if (entity.isTorrent) {
-                jobs[id.value]?.cancel()
-                jobs.remove(id.value)
                 internalListener?.onDownloadCancelled(id)
             }
 
             val currentState = _state.value[id]
-
-            val map = _state.value.toMutableMap()
-            map.remove(id)
-            _state.value = map
+            synchronized(_state) {
+                val map = _state.value.toMutableMap()
+                map.remove(id)
+                _state.value = map
+            }
 
             dao.deleteChunks(id.value)
             dao.deleteDownload(id.value)
@@ -427,22 +384,16 @@ class DownloadManager(
             val tempDir = File(context.filesDir, "chunks_${id.value}")
             if (tempDir.exists()) tempDir.deleteRecursively()
 
-            if (deleteFile && currentState is DownloadState.Completed) {
-                val fileUri: Uri =
-                    (currentState.fileUri ?: "") as Uri
-                try {
-                    val deleted = context.contentResolver.delete(fileUri, null, null)
-                    if (deleted == 0) {
-                        if (fileUri.scheme == "file") {
-                            val file = File(requireNotNull(fileUri.path))
-                            if (file.exists()) file.delete()
-                        }
-                    }
-                } catch (e: SecurityException) {
-                    Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Cannot delete file: ${e.message}")
+            if (deleteFile) {
+                val file = File(getPublicDownloadDir(), entity.fileName)
+                if (file.exists()) file.delete()
+                
+                if (currentState is DownloadState.Completed && currentState.fileUri != null) {
+                    try {
+                        context.contentResolver.delete(currentState.fileUri, null, null)
+                    } catch (_: Exception) {}
                 }
             }
-
             stopServiceIfIdle()
         }
     }
@@ -460,19 +411,18 @@ class DownloadManager(
         }
     }
 
+    /**
+     * Adds a download to the queue without starting it immediately.
+     */
     suspend fun addToQueue(request: DownloadRequest): DownloadId {
         val id = DownloadId(UUID.randomUUID().toString())
+        val totalSize = withContext(Dispatchers.IO) { downloader.getFileSize(request.uri) }
 
-        val totalSize = withContext(Dispatchers.IO) {
-            downloader.getFileSize(request.uri)
+        val actualThreadCount = if (request.autoThreading && totalSize > 0) {
+            computeAutoThreadCount(totalSize)
+        } else {
+            request.threadCount
         }
-
-        val actualThreadCount =
-            if (request.autoThreading && totalSize > 0) {
-                computeAutoThreadCount(totalSize)
-            } else {
-                request.threadCount
-            }
 
         val entity = DownloadEntity(
             id = id.value,
@@ -483,17 +433,17 @@ class DownloadManager(
             status = DownloadStatus.QUEUED
         )
 
-        withContext(Dispatchers.IO) {
-            dao.insertDownload(entity)
-        }
-
+        dao.insertDownload(entity)
         update(id, DownloadState.Queued(id))
-
-        Log.d(
-            TurboConstants.TURBO_DOWNLOADER_LOG,
-            "Download added to queue: ${id.value}"
-        )
-
         return id
+    }
+
+    /**
+     * Returns the public "Downloads/TurboDownloader" directory for file persistence.
+     */
+    internal fun getPublicDownloadDir(): File {
+        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TurboDownloader")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
     }
 }

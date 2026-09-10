@@ -14,7 +14,21 @@ import com.rarestardev.turbodownloader.storage.ChunkEntity
 import okio.use
 import java.io.File
 
+/**
+ * Utility object for merging downloaded chunks into a single final file and registering it with the system.
+ */
 object MergeChunksHelper {
+    /**
+     * Merges multiple chunk files into a final destination file.
+     * Uses MediaStore for Android 10+ (Scoped Storage) and direct file I/O for older versions.
+     *
+     * @param context Application context.
+     * @param chunks List of downloaded chunks to merge.
+     * @param tempDir Directory where chunk parts are stored.
+     * @param finalFileName Desired name for the merged file.
+     * @param mimeType Mime type of the file.
+     * @return The [Uri] of the final merged file, or null if merging failed.
+     */
     fun mergeChunkToDownloads(
         context: Context,
         chunks: List<ChunkEntity>,

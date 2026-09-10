@@ -23,6 +23,13 @@ import java.io.File
  *
  * @property context The application context to access resources.
  */
+/**
+ * Manager for Torrent downloads using libtorrent4j.
+ * This class is responsible for initializing and controlling the torrent download process,
+ * including polling for progress updates and managing peer connectivity.
+ *
+ * @property context The application context to access resources and storage.
+ */
 class TorrentManager(private val context: Context) {
 
     private val sessionManager get() = TorrentEngine.sessionManager
@@ -31,7 +38,7 @@ class TorrentManager(private val context: Context) {
     private val torrentHashes = mutableMapOf<DownloadId, Sha1Hash>()
 
     /**
-     * Flag used for testing to verify if the torrent engine has been initialized.
+     * Flag used to verify if the torrent engine has been initialized.
      */
     internal val isInitialized: Boolean get() = TorrentEngine.isInitialized
 
@@ -74,7 +81,7 @@ class TorrentManager(private val context: Context) {
     }
 
     /**
-     * Starts the torrent download process.
+     * Starts the torrent engine process.
      * This method is called if torrent support is enabled in the TurboDownloader settings.
      */
     fun initTorrentDownload() {
@@ -86,10 +93,11 @@ class TorrentManager(private val context: Context) {
 
     /**
      * Enqueues a torrent download via a magnet link or a .torrent file path.
-     * @param id The download ID for tracking.
+     * 
+     * @param id The unique download ID for tracking.
      * @param uri The magnet link or path to the .torrent file.
      * @param saveDir The directory where the downloaded files will be saved.
-     * @param downloadManager The manager to report progress to.
+     * @param downloadManager The manager to report progress and state updates to.
      */
     fun download(id: DownloadId, uri: String, saveDir: File, downloadManager: DownloadManager) {
         if (!isInitialized) initTorrentDownload()
@@ -127,6 +135,23 @@ class TorrentManager(private val context: Context) {
                     val handle = sessionManager.find(infoHash)
                     if (handle != null && handle.isValid) {
                         val status = handle.status()
+                        
+                        // If the handle is paused, stop reporting RUNNING/CONNECTING status
+                        if (status.isPaused) {
+                            val totalBytes = if (status.total() > 0) status.total() else 0L
+                            val downloaded = status.totalDone()
+                            downloadManager.update(id, DownloadState.Paused(
+                                id, 
+                                DownloadProgress(
+                                    totalBytes = totalSizeOrUnknown(totalBytes),
+                                    downloadBytes = downloaded,
+                                    status = DownloadStatus.PAUSED
+                                )
+                            ))
+                            delay(2000)
+                            continue
+                        }
+
                         val totalBytes = if (status.total() > 0) status.total() else 0L
                         val downloaded = status.totalDone()
                         val speed = status.downloadPayloadRate().toLong()
@@ -150,7 +175,7 @@ class TorrentManager(private val context: Context) {
                             break
                         }
 
-                        // Update status in DB if it changed (e.g. from CONNECTING to RUNNING)
+                        // Update status in DB if it changed
                         downloadManager.updateDownloadStatusInternal(id, downloadStatus)
 
                         // Update filename and size once metadata is available
@@ -168,7 +193,8 @@ class TorrentManager(private val context: Context) {
                                 speedBytesPerSec = speed,
                                 status = downloadStatus,
                                 peers = peers
-                            )
+                            ),
+                            status = downloadStatus
                         ))
                     }
                 } catch (e: Exception) {
@@ -179,12 +205,50 @@ class TorrentManager(private val context: Context) {
         }
     }
 
+    /**
+     * Pauses the torrent download.
+     * @param id The download ID of the torrent to pause.
+     */
+    fun pauseTorrent(id: DownloadId) {
+        val infoHash = torrentHashes[id]
+        if (infoHash != null && isInitialized) {
+            try {
+                val handle = sessionManager.find(infoHash)
+                if (handle != null && handle.isValid) {
+                    handle.pause()
+                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Paused torrent handle for $id")
+                }
+            } catch (e: Exception) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Error pausing torrent $id", e)
+            }
+        }
+    }
+
+    /**
+     * Resumes the torrent download.
+     * @param id The download ID of the torrent to resume.
+     */
+    fun resumeTorrent(id: DownloadId) {
+        val infoHash = torrentHashes[id]
+        if (infoHash != null && isInitialized) {
+            try {
+                val handle = sessionManager.find(infoHash)
+                if (handle != null && handle.isValid) {
+                    handle.resume()
+                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Resumed torrent handle for $id")
+                }
+            } catch (e: Exception) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Error resuming torrent $id", e)
+            }
+        }
+    }
+
     private fun totalSizeOrUnknown(size: Long): Long {
         return if (size <= 0) -1L else size
     }
 
     /**
-     * Removes a specific torrent from the session.
+     * Removes a specific torrent from the session and stops its polling job.
      * @param id The download ID of the torrent to remove.
      */
     fun removeTorrent(id: DownloadId) {
@@ -206,7 +270,7 @@ class TorrentManager(private val context: Context) {
     }
 
     /**
-     * Stops the torrent engine and releases resources.
+     * Stops the torrent engine, removes all listeners, and releases session resources.
      */
     fun stop() {
         pollingJobs.values.forEach { it.cancel() }
