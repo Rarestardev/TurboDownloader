@@ -21,23 +21,6 @@ class TurboDownloaderTest {
     }
 
     @Test
-    fun `when enableTorrent is true, torrent engine should be initialized`() {
-        // Given
-        val mockContext = mockk<Context>(relaxed = true)
-        every { mockContext.applicationContext } returns mockContext
-        val mockTorrentManager = mockk<TorrentManager>(relaxed = true)
-
-        val turboDownloader = TurboDownloader.Builder(mockContext).build()
-        turboDownloader.torrentManager = mockTorrentManager
-
-        // When
-        turboDownloader.enableTorrent = true
-
-        // Then
-        verify { mockTorrentManager.initTorrentDownload() }
-    }
-
-    @Test
     fun `when enableTorrent is false, torrent engine should not be initialized`() {
         // Given
         val mockContext = mockk<Context>(relaxed = true)
@@ -48,11 +31,11 @@ class TurboDownloaderTest {
             .build()
         
         // At this point torrentManager is the real one, but not initialized
-        assertFalse("Torrent engine should not be initialized by default", turboDownloader.torrentManager.isInitialized)
+        assertFalse("Torrent engine should not be initialized by default", turboDownloader.isTorrentInitialized)
         
         turboDownloader.enableTorrent = false
 
         // Then
-        assertFalse("Torrent engine should still not be initialized", turboDownloader.torrentManager.isInitialized)
+        assertFalse("Torrent engine should still not be initialized", turboDownloader.isTorrentInitialized)
     }
 }

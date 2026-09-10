@@ -25,8 +25,7 @@ import java.io.File
  */
 class TorrentManager(private val context: Context) {
 
-    private var _sessionManager: SessionManager? = null
-    private val sessionManager get() = _sessionManager!!
+    private val sessionManager get() = TorrentEngine.sessionManager
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val pollingJobs = mutableMapOf<DownloadId, Job>()
     private val torrentHashes = mutableMapOf<DownloadId, Sha1Hash>()
@@ -34,8 +33,7 @@ class TorrentManager(private val context: Context) {
     /**
      * Flag used for testing to verify if the torrent engine has been initialized.
      */
-    internal var isInitialized: Boolean = false
-        private set
+    internal val isInitialized: Boolean get() = TorrentEngine.isInitialized
 
     private val alertListener = object : AlertListener {
         override fun types(): IntArray = intArrayOf(
@@ -48,25 +46,29 @@ class TorrentManager(private val context: Context) {
         )
 
         override fun alert(alert: Alert<*>) {
-            when (alert.type()) {
-                AlertType.TORRENT_FINISHED -> {
-                    if (alert is TorrentFinishedAlert) {
-                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent finished: ${alert.handle().status().name()}")
+            try {
+                when (alert.type()) {
+                    AlertType.TORRENT_FINISHED -> {
+                        if (alert is TorrentFinishedAlert) {
+                            Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent finished: ${alert.handle()?.status()?.name() ?: "unknown"}")
+                        }
                     }
+                    AlertType.METADATA_RECEIVED -> {
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Metadata received for torrent")
+                    }
+                    AlertType.DHT_BOOTSTRAP -> {
+                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "DHT bootstrapped successfully.")
+                    }
+                    AlertType.TRACKER_REPLY -> {
+                        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker reply: ${alert.message() ?: ""}")
+                    }
+                    AlertType.TRACKER_ERROR -> {
+                        Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker error: ${alert.message() ?: ""}")
+                    }
+                    else -> {}
                 }
-                AlertType.METADATA_RECEIVED -> {
-                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Metadata received for torrent")
-                }
-                AlertType.DHT_BOOTSTRAP -> {
-                    Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "DHT bootstrapped successfully.")
-                }
-                AlertType.TRACKER_REPLY -> {
-                    Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker reply: ${alert.message()}")
-                }
-                AlertType.TRACKER_ERROR -> {
-                    Log.w(TurboConstants.TURBO_DOWNLOADER_LOG, "Tracker error: ${alert.message()}")
-                }
-                else -> {}
+            } catch (e: Exception) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Error in Torrent AlertListener", e)
             }
         }
     }
@@ -76,29 +78,9 @@ class TorrentManager(private val context: Context) {
      * This method is called if torrent support is enabled in the TurboDownloader settings.
      */
     fun initTorrentDownload() {
-        if (isInitialized) return
-
-        try {
-            Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent download engine initializing...")
-            _sessionManager = SessionManager()
-
-            val settings = SettingsPack()
-            settings.setEnableDht(true)
-            settings.setEnableLsd(true)
-
-            // Enable UPnP and NAT-PMP safely using swig values
-            settings.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
-            settings.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
-
-            settings.setDhtBootstrapNodes("router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881,router.bitcomet.com:6881,dht.aelitis.com:6881")
-
+        if (!TorrentEngine.isInitialized) {
+            TorrentEngine.initialize()
             sessionManager.addListener(alertListener)
-            sessionManager.start(SessionParams(settings))
-            isInitialized = true
-            Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent engine initialized successfully.")
-        } catch (e: Throwable) {
-            Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Failed to initialize Torrent Engine", e)
-            isInitialized = false
         }
     }
 
@@ -131,9 +113,9 @@ class TorrentManager(private val context: Context) {
             torrentHashes[id] = infoHash
             startPolling(id, infoHash, downloadManager)
             
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Failed to start torrent download", e)
-            downloadManager.update(id, DownloadState.Failed(id, e))
+            downloadManager.update(id, DownloadState.Failed(id, Exception(e.message)))
         }
     }
 
@@ -141,43 +123,47 @@ class TorrentManager(private val context: Context) {
         pollingJobs[id]?.cancel()
         pollingJobs[id] = scope.launch {
             while (isActive) {
-                val handle = sessionManager.find(infoHash)
-                if (handle != null && handle.isValid) {
-                    val status = handle.status()
-                    val totalBytes = if (status.total() > 0) status.total() else 0L
-                    val downloaded = status.totalDone()
-                    val speed = status.downloadPayloadRate().toLong()
-                    val peers = status.numPeers()
-                    
-                    val downloadStatus = when {
-                        status.state() == TorrentStatus.State.SEEDING -> DownloadStatus.SEEDING
-                        status.isFinished -> DownloadStatus.COMPLETED
-                        else -> DownloadStatus.RUNNING
+                try {
+                    val handle = sessionManager.find(infoHash)
+                    if (handle != null && handle.isValid) {
+                        val status = handle.status()
+                        val totalBytes = if (status.total() > 0) status.total() else 0L
+                        val downloaded = status.totalDone()
+                        val speed = status.downloadPayloadRate().toLong()
+                        val peers = status.numPeers()
+                        
+                        val downloadStatus = when {
+                            status.state() == TorrentStatus.State.SEEDING -> DownloadStatus.SEEDING
+                            status.isFinished -> DownloadStatus.COMPLETED
+                            else -> DownloadStatus.RUNNING
+                        }
+
+                        if (downloadStatus == DownloadStatus.COMPLETED) {
+                            Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id completed and moved to seeding")
+                            downloadManager.updateDownloadStatusInternal(id, DownloadStatus.COMPLETED)
+                            downloadManager.update(id, DownloadState.Completed(id, Uri.fromFile(File(handle.savePath(), status.name()))))
+                            break
+                        }
+
+                        // Update filename and size once metadata is available
+                        if (status.hasMetadata() && totalBytes > 0) {
+                            downloadManager.updateDownloadInfoInternal(id, status.name(), totalBytes)
+                        }
+
+                        Log.v(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id: $downloaded / $totalBytes bytes, Speed: $speed, Peers: $peers")
+
+                        downloadManager.update(id, DownloadState.Running(
+                            id, 
+                            DownloadProgress(
+                                totalBytes = totalSizeOrUnknown(totalBytes),
+                                downloadBytes = downloaded,
+                                speedBytesPerSec = speed,
+                                status = downloadStatus
+                            )
+                        ))
                     }
-
-                    if (downloadStatus == DownloadStatus.COMPLETED) {
-                        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id completed and moved to seeding")
-                        downloadManager.updateDownloadStatusInternal(id, DownloadStatus.COMPLETED)
-                        downloadManager.update(id, DownloadState.Completed(id, Uri.fromFile(File(handle.savePath(), status.name()))))
-                        break
-                    }
-
-                    // Update filename and size once metadata is available
-                    if (status.hasMetadata() && totalBytes > 0) {
-                        downloadManager.updateDownloadInfoInternal(id, status.name(), totalBytes)
-                    }
-
-                    Log.v(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent $id: $downloaded / $totalBytes bytes, Speed: $speed, Peers: $peers")
-
-                    downloadManager.update(id, DownloadState.Running(
-                        id, 
-                        DownloadProgress(
-                            totalBytes = totalSizeOrUnknown(totalBytes),
-                            downloadBytes = downloaded,
-                            speedBytesPerSec = speed,
-                            status = downloadStatus
-                        )
-                    ))
+                } catch (e: Exception) {
+                    Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Error polling torrent $id", e)
                 }
                 delay(1000)
             }
@@ -198,9 +184,13 @@ class TorrentManager(private val context: Context) {
         
         val infoHash = torrentHashes[id]
         if (infoHash != null && isInitialized) {
-            val handle = sessionManager.find(infoHash)
-            if (handle != null && handle.isValid) {
-                sessionManager.remove(handle)
+            try {
+                val handle = sessionManager.find(infoHash)
+                if (handle != null && handle.isValid) {
+                    sessionManager.remove(handle)
+                }
+            } catch (e: Exception) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Error removing torrent $id", e)
             }
         }
         torrentHashes.remove(id)
@@ -210,13 +200,11 @@ class TorrentManager(private val context: Context) {
      * Stops the torrent engine and releases resources.
      */
     fun stop() {
-        if (isInitialized) {
-            pollingJobs.values.forEach { it.cancel() }
-            pollingJobs.clear()
+        pollingJobs.values.forEach { it.cancel() }
+        pollingJobs.clear()
+        try {
             sessionManager.removeListener(alertListener)
-            sessionManager.stop()
-            _sessionManager = null
-            isInitialized = false
-        }
+        } catch (_: Exception) {}
+        TorrentEngine.stop()
     }
 }

@@ -51,6 +51,6 @@ class TorrentIntegrationTest {
         // But for a developer with internet, it should work.
         // If it times out, it at least confirms the engine started and is polling.
         
-        assertTrue("Torrent engine should be initialized", turboDownloader.torrentManager.isInitialized)
+        assertTrue("Torrent engine should be initialized", turboDownloader.isTorrentInitialized)
     }
 }

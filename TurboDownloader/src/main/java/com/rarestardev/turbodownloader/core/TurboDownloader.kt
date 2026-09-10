@@ -36,7 +36,6 @@ class TurboDownloader private constructor(
     private val manager = ChunkDownloadApi.get(context)
     private var notificationListener: DownloadNotificationListener? = null
     private var connectionListener: NetworkConnectionListener? = null
-    internal var torrentManager = TorrentManager(context)
 
     /**
      * Enables or disables torrent download capability.
@@ -46,13 +45,9 @@ class TurboDownloader private constructor(
         set(value) {
             field = value
             if (value) {
-                if (!torrentManager.isInitialized) {
-                    torrentManager.initTorrentDownload()
-                }
+                manager.torrentManager.initTorrentDownload()
             } else {
-                if (torrentManager.isInitialized) {
-                    torrentManager.stop()
-                }
+                manager.torrentManager.stop()
             }
         }
 
@@ -61,7 +56,7 @@ class TurboDownloader private constructor(
     }
 
     override fun onDownloadCancelled(id: DownloadId) {
-        torrentManager.removeTorrent(id)
+        manager.torrentManager.removeTorrent(id)
     }
 
     suspend fun startDownload(
@@ -94,7 +89,7 @@ class TurboDownloader private constructor(
             )
             manager.insertDownloadInternal(entity)
 
-            torrentManager.download(id, url, saveDir, manager)
+            manager.torrentManager.download(id, url, saveDir, manager)
             return id
         }
 
@@ -165,6 +160,8 @@ class TurboDownloader private constructor(
     fun release() = manager.release()
     fun downloadState() = manager.state
     fun getAllDownloads() = manager.allDownloads()
+    
+    internal val isTorrentInitialized: Boolean get() = manager.torrentManager.isInitialized
 
     fun queuedListDownload() = manager.allQueuedList()
 

@@ -41,6 +41,9 @@ class DownloadManager(
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
     internal var internalListener: com.rarestardev.turbodownloader.listener.DownloadInternalListener? = null
+    
+    // Manage torrent engine centrally
+    internal val torrentManager = TorrentManager(context)
 
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
@@ -224,9 +227,11 @@ class DownloadManager(
     }
 
     internal fun update(id: DownloadId, state: DownloadState) {
-        val map = _state.value.toMutableMap()
-        map[id] = state
-        _state.value = map
+        synchronized(_state) {
+            val map = _state.value.toMutableMap()
+            map[id] = state
+            _state.value = map
+        }
     }
 
     internal fun insertDownloadInternal(entity: DownloadEntity) {
@@ -286,6 +291,8 @@ class DownloadManager(
                     if (tempDir.exists()) tempDir.deleteRecursively()
                 }
             }
+            // Stop torrent engine safely
+            torrentManager.stop()
         }
 
         Log.d(
