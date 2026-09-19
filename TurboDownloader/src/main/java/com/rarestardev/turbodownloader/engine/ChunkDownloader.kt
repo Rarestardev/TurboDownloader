@@ -3,6 +3,7 @@ package com.rarestardev.turbodownloader.engine
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.rarestardev.turbodownloader.limit.SpeedLimiter
 import com.rarestardev.turbodownloader.storage.ChunkEntity
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
@@ -20,6 +21,7 @@ import java.io.FileOutputStream
 class ChunkDownloader(
     private val dao: DownloadDao,
     private val context: Context,
+    private val limiter: SpeedLimiter = SpeedLimiter(),
     private val client: OkHttpClient = OkHttpClient()
 ) {
 
@@ -141,6 +143,8 @@ class ChunkDownloader(
                         current = current.copy(downloaded = current.downloaded + read)
                         dao.insertChunk(current)
                         onProgress(read.toLong())
+                        // shared three-level speed limit (OFF = no throttle)
+                        limiter.acquire(read)
                     }
                 }
             }

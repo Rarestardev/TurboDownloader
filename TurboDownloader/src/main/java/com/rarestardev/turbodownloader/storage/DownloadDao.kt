@@ -23,6 +23,9 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
 
+    @Query("UPDATE downloads SET totalBytes = :totalBytes, chunkCount = :chunkCount WHERE id = :id")
+    suspend fun updateDownloadMeta(id: String, totalBytes: Long, chunkCount: Int)
+
     @Query("SELECT * FROM downloads")
     suspend fun getAllDownloadsOnce(): List<DownloadEntity>
 

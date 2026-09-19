@@ -15,6 +15,88 @@ import okio.use
 import java.io.File
 
 object MergeChunksHelper {
+    /**
+     * Saves one already-complete file into the public Downloads collection
+     * (MediaStore on Android 10+, classic file + MediaStore.Files below).
+     * Used by the torrent engine after all pieces are merged.
+     */
+    fun saveSingleFileToDownloads(
+        context: Context,
+        sourceFile: File,
+        fileName: String,
+        mimeType: String
+    ): Uri? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val nowSeconds = System.currentTimeMillis() / 1000
+            val contentValue = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+                put(MediaStore.Downloads.DATE_ADDED, nowSeconds)
+                put(MediaStore.Downloads.DATE_MODIFIED, nowSeconds)
+            }
+
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValue)
+                ?: return null
+
+            return try {
+                resolver.openOutputStream(uri)?.use { outputStream ->
+                    sourceFile.inputStream().use { input -> input.copyTo(outputStream) }
+                }
+                contentValue.clear()
+                contentValue.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentValue.put(
+                    MediaStore.Downloads.DATE_MODIFIED,
+                    System.currentTimeMillis() / 1000
+                )
+                resolver.update(uri, contentValue, null, null)
+                uri
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "saveSingleFileToDownloads: ${e.message}")
+                null
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.e(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Android 10 below need permission write on external storage!"
+                )
+                return null
+            }
+
+            val downloadsDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val outputFile = File(downloadsDir, fileName)
+            return try {
+                outputFile.outputStream().use { outputStream ->
+                    sourceFile.inputStream().use { input -> input.copyTo(outputStream) }
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.Files.FileColumns.DATA, outputFile.absolutePath)
+                    put(MediaStore.Files.FileColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.Files.FileColumns.DATE_ADDED, System.currentTimeMillis() / 1000)
+                    put(
+                        MediaStore.Files.FileColumns.DATE_MODIFIED,
+                        System.currentTimeMillis() / 1000
+                    )
+                }
+                context.contentResolver.insert(
+                    MediaStore.Files.getContentUri("external"), values
+                )
+            } catch (e: Exception) {
+                Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "saveSingleFileToDownloads: ${e.message}")
+                null
+            }
+        }
+    }
+
     fun mergeChunkToDownloads(
         context: Context,
         chunks: List<ChunkEntity>,

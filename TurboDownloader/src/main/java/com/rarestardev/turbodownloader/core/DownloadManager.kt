@@ -7,6 +7,8 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
+import com.rarestardev.turbodownloader.limit.SpeedLimiter
+import com.rarestardev.turbodownloader.limit.TurboLimitLevel
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.service.DownloadService
@@ -31,65 +33,151 @@ import java.util.UUID
 class DownloadManager(
     private val dao: DownloadDao,
     private val scope: CoroutineScope,
-    private val context: Context
+    private val context: Context,
+    private val gate: ConcurrentDownloadGate,
+    private val limiter: SpeedLimiter
 ) {
-    private val downloader = ChunkDownloader(dao, context)
+    private val downloader = ChunkDownloader(dao, context, limiter)
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
     private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
 
+    // ------------------------------------------------------------------
+    // Speed limit (three levels: LOW / MEDIUM / HIGH, OFF = unlimited)
+    // ------------------------------------------------------------------
+
+    fun setSpeedLimit(level: TurboLimitLevel) {
+        limiter.setLimit(level.bytesPerSecond)
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Speed limit set to $level (${level.bytesPerSecond} bytes/sec)"
+        )
+    }
+
+    fun speedLimit(): TurboLimitLevel =
+        TurboLimitLevel.entries.firstOrNull { it.bytesPerSecond == limiter.limit }
+            ?: TurboLimitLevel.OFF
+
+    // ------------------------------------------------------------------
+    // Concurrent download limit
+    // ------------------------------------------------------------------
+
+    fun setMaxConcurrentDownloads(count: Int) {
+        gate.setMaxConcurrent(count)
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Max concurrent downloads set to $count"
+        )
+    }
+
+    fun maxConcurrentDownloads(): Int = gate.maxConcurrent()
+
+    fun activeDownloadCount(): Int = gate.activeCount()
+
+    fun queuedDownloadCount(): Int = gate.waitingCount()
+
+    // ------------------------------------------------------------------
+    // Enqueue / control
+    // ------------------------------------------------------------------
+
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
         val id = DownloadId(UUID.randomUUID().toString())
 
-        val job = scope.launch(Dispatchers.IO) {
-            val totalSize = downloader.getFileSize(request.uri)
+        scope.launch(Dispatchers.IO) {
+            // Insert a placeholder row immediately so the download is visible
+            // even while it waits for a free concurrency slot.
+            val entity = DownloadEntity(
+                id = id.value,
+                url = request.uri,
+                fileName = request.fileName,
+                totalBytes = -1L,
+                chunkCount = request.threadCount,
+                status = DownloadStatus.QUEUED
+            )
+            dao.insertDownload(entity)
+            update(id, DownloadState.Queued(id))
 
+            val granted = gate.tryAcquire(id.value) { startDownloadJob(id, request) }
+            if (granted) {
+                Log.d(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Download accepted (${gate.activeCount()}/${gate.maxConcurrent()} active): ${request.fileName}"
+                )
+            } else {
+                Log.i(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Concurrent download limit reached " +
+                            "(${gate.activeCount()}/${gate.maxConcurrent()} active, " +
+                            "${gate.waitingCount()} waiting) - queued: ${request.fileName}"
+                )
+            }
+        }
+
+        return id
+    }
+
+    private fun startDownloadJob(id: DownloadId, request: DownloadRequest) {
+        val job = scope.launch(Dispatchers.IO) {
+            val entity = dao.getDownload(id.value)
+            if (entity == null) {
+                // cancelled while waiting for a slot
+                gate.release(id.value)
+                return@launch
+            }
+
+            val totalSize = downloader.getFileSize(request.uri)
             val actualThreadCount = if (request.autoThreading && totalSize > 0) {
                 computeAutoThreadCount(totalSize)
             } else {
                 request.threadCount
             }
 
-            val entity = DownloadEntity(
-                id = id.value,
-                url = request.uri,
-                fileName = request.fileName,
-                totalBytes = totalSize,
-                chunkCount = actualThreadCount,
-                status = DownloadStatus.QUEUED
-            )
+            dao.updateDownloadMeta(id.value, totalSize, actualThreadCount)
 
             Log.d(
                 TurboConstants.TURBO_DOWNLOADER_LOG,
-                "Used thread for downloads  = ThreadCount : $actualThreadCount , FileSize : $totalSize"
+                "Used thread for downloads = ThreadCount : $actualThreadCount , FileSize : $totalSize"
             )
-            dao.insertDownload(entity)
-            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            update(id, DownloadState.Queued(id))
 
-            executeDownload(entity)
+            executeDownload(entity.copy(totalBytes = totalSize, chunkCount = actualThreadCount))
         }
-
         jobs[id.value] = job
-        Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "queued download...")
-        return id
     }
 
     fun resume(id: DownloadId) {
-        ensureServiceRunning()
-        val job = scope.launch(Dispatchers.IO) {
-            jobs.remove(id.value)
-
-            pauseFlags[id.value] = false
-            val entity = dao.getDownload(id.value) ?: return@launch
-            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            executeDownload(entity)
+        val granted = gate.tryAcquire(id.value) {
+            val job = scope.launch(Dispatchers.IO) {
+                jobs.remove(id.value)
+                pauseFlags[id.value] = false
+                val entity = dao.getDownload(id.value)
+                if (entity == null) {
+                    gate.release(id.value)
+                    return@launch
+                }
+                dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
+                executeDownload(entity)
+            }
+            jobs[id.value] = job
         }
 
-        jobs[id.value] = job
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
+        if (granted) {
+            Log.i(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "resume downloading... (${gate.activeCount()}/${gate.maxConcurrent()} active)"
+            )
+        } else {
+            scope.launch(Dispatchers.IO) {
+                dao.updateStatus(id.value, DownloadStatus.QUEUED.name)
+                update(id, DownloadState.Queued(id))
+            }
+            Log.i(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "resume postponed: concurrent limit reached " +
+                        "(${gate.activeCount()}/${gate.maxConcurrent()} active)"
+            )
+        }
     }
 
     fun pause(id: DownloadId) {
@@ -98,7 +186,6 @@ class DownloadManager(
             dao.updateStatus(id.value, DownloadStatus.PAUSED.name)
             val entity = dao.getDownload(id.value) ?: return@launch
             val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-            /*update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))*/
             update(
                 id,
                 DownloadState.Paused(
@@ -111,7 +198,8 @@ class DownloadManager(
                 )
             )
         }
-
+        // Paused downloads free their concurrency slot for queued ones.
+        gate.release(id.value)
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
     }
 
@@ -131,6 +219,9 @@ class DownloadManager(
 
             val tempDir = File(context.filesDir, "chunks_${id.value}")
             if (tempDir.exists()) tempDir.deleteRecursively()
+
+            gate.cancelWaiting(id.value)
+            gate.release(id.value)
 
             stopServiceIfIdle()
         }
@@ -273,6 +364,8 @@ class DownloadManager(
             if (pauseFlags[id.value] == true){
                 val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
                 update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                // slot may have been granted while paused-queued; release is a no-op otherwise
+                gate.release(id.value)
                 return
             }
 
@@ -312,11 +405,17 @@ class DownloadManager(
 
                 if (pauseFlags[id.value] == true) {
                     update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    gate.release(id.value)
                     return
                 }
 
                 dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
                 update(id, DownloadState.Completed(id, resultUri))
+                Log.d(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Download completed: ${entity.fileName}"
+                )
+                gate.release(id.value)
                 return
 
             } catch (e: Exception) {
@@ -351,6 +450,11 @@ class DownloadManager(
                     update(id, DownloadState.Failed(id, e))
                     val tempDir = File(context.filesDir, "chunks_${entity.id}")
                     if (tempDir.exists()) tempDir.deleteRecursively()
+                    Log.e(
+                        TurboConstants.TURBO_DOWNLOADER_LOG,
+                        "Download failed permanently: ${entity.fileName} - ${e.message}"
+                    )
+                    gate.release(id.value)
                     return
                 }
             }

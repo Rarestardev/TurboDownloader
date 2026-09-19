@@ -4,11 +4,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.util.Log
-import androidx.room.Room
+import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.core.DownloadManager
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
-import com.rarestardev.turbodownloader.storage.DownloadDatabase
 import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,21 +23,11 @@ internal class DownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val db = Room.databaseBuilder(
-            applicationContext,
-            DownloadDatabase::class.java,
-            "chunk_downloads.db"
-        ).build()
 
         manager =
             DownloadManagerHolder.manager
                 ?: run {
-                    val newManager = DownloadManager(
-                        db.dao(),
-                        serviceScope,
-                        this
-                    )
-
+                    val newManager = ChunkDownloadApi.get(applicationContext)
                     DownloadManagerHolder.manager = newManager
                     newManager
                 }
