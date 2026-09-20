@@ -97,7 +97,7 @@ internal object NotificationHelper {
         }
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.download_ic)
             .setContentTitle(title)
             .setContentText(contentText)
             .setProgress(100, progress, status == DownloadStatus.CONNECTING)
@@ -122,7 +122,7 @@ internal object NotificationHelper {
         progress: Float
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.download_ic)
             .setContentTitle("Download Paused")
             .setContentText("Progress: $progress%")
             .setOngoing(true)
@@ -144,7 +144,7 @@ internal object NotificationHelper {
         context: Context
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.download_ic)
             .setContentTitle("Download Complete")
             .setContentText("File is ready.")
             .setAutoCancel(true)
@@ -158,7 +158,7 @@ internal object NotificationHelper {
         context: Context
     ): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setSmallIcon(R.drawable.download_ic)
             .setContentTitle("Download Failed")
             .setContentText("An error occurred during download.")
             .setAutoCancel(true)

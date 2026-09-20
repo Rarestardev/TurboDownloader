@@ -221,7 +221,7 @@ class DownloadManager(
         }
     }
 
-    private fun ensureServiceRunning() {
+    internal fun ensureServiceRunning() {
         val intent = Intent(context, DownloadService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ContextCompat.startForegroundService(context, intent)

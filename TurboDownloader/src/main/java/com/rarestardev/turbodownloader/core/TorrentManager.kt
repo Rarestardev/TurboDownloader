@@ -137,7 +137,7 @@ class TorrentManager(private val context: Context) {
                         val status = handle.status()
                         
                         // If the handle is paused, stop reporting RUNNING/CONNECTING status
-                        if (status.isPaused) {
+                        if (status.flags().and_(TorrentFlags.PAUSED).non_zero()) {
                             val totalBytes = if (status.total() > 0) status.total() else 0L
                             val downloaded = status.totalDone()
                             downloadManager.update(id, DownloadState.Paused(

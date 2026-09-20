@@ -81,6 +81,7 @@ class TurboDownloader private constructor(
                 Log.e(TurboConstants.TURBO_DOWNLOADER_LOG, "Torrent download requested but not enabled.")
                 return null
             }
+            manager.ensureServiceRunning()
             val saveDir = manager.getPublicDownloadDir()
 
             val id = DownloadId("torrent_${UUID.randomUUID()}")
