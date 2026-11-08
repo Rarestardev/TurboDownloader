@@ -51,6 +51,11 @@ internal class DownloadScheduler(context: Context) {
 
     fun setSchedulingEnabled(enabled: Boolean) = storage.setSchedulingEnabled(enabled)
 
+    fun isFinishAfterScheduledQueue(): Boolean = storage.isFinishAfterScheduledQueue()
+
+    fun setFinishAfterScheduledQueue(enabled: Boolean) =
+        storage.setFinishAfterScheduledQueue(enabled)
+
     fun lastSignal(): ScheduleSignalRecord? = storage.lastSignal()
 
     fun exactAlarmAccess(): ExactAlarmAccess {

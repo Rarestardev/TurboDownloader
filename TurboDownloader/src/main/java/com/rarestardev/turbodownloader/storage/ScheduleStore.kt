@@ -10,6 +10,8 @@ internal interface ScheduleStore {
     fun peek(): DownloadSchedule?
     fun isSchedulingEnabled(): Boolean
     fun setSchedulingEnabled(enabled: Boolean)
+    fun isFinishAfterScheduledQueue(): Boolean
+    fun setFinishAfterScheduledQueue(enabled: Boolean)
     fun clear()
     fun recordSignal(signal: ScheduleSignal, atMillis: Long)
     fun lastSignal(): ScheduleSignalRecord?
@@ -63,6 +65,13 @@ internal class PreferenceScheduleStore(
         prefs.edit { putBoolean(KEY_ENABLED, enabled) }
     }
 
+    override fun isFinishAfterScheduledQueue(): Boolean =
+        prefs.getBoolean(KEY_FINISH_AFTER_QUEUE, false)
+
+    override fun setFinishAfterScheduledQueue(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_FINISH_AFTER_QUEUE, enabled) }
+    }
+
     override fun clear() {
         prefs.edit {
             remove(KEY_START)
@@ -92,6 +101,7 @@ internal class PreferenceScheduleStore(
         const val KEY_START = "schedule_start"
         const val KEY_END = "schedule_end"
         const val KEY_ENABLED = "schedule_enabled"
+        const val KEY_FINISH_AFTER_QUEUE = "finish_after_scheduled_queue"
         const val KEY_LAST_SIGNAL = "schedule_last_signal"
         const val KEY_LAST_SIGNAL_AT = "schedule_last_signal_at"
     }

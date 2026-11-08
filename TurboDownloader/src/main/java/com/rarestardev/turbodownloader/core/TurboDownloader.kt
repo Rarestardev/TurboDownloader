@@ -10,6 +10,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.listener.NetworkConnectionListener
+import com.rarestardev.turbodownloader.listener.ScheduledQueueFinishedListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.model.DownloadSchedule
 import com.rarestardev.turbodownloader.model.ScheduleSignalRecord
@@ -29,7 +30,13 @@ class TurboDownloader private constructor(
     private val showFormatter: Boolean,
     private val autoThreading: Boolean
 ) {
-    private val manager = ChunkDownloadApi.get(context)
+    private var queueFinishedListener: ScheduledQueueFinishedListener? = null
+
+    private val manager = ChunkDownloadApi.get(context).also { created ->
+        created.onScheduledQueueFinished = {
+            queueFinishedListener?.onScheduledQueueFinished()
+        }
+    }
     private var notificationListener: DownloadNotificationListener? = null
     private var connectionListener: NetworkConnectionListener? = null
     private val torrentManager = TorrentManager(context)
@@ -173,6 +180,20 @@ class TurboDownloader private constructor(
      * A download paused by the user stays paused.
      * [setSchedule], [clearSchedule], and [reconcileSchedule] require scheduling to be on.
      */
+    /**
+     * When true, the download service stops and [setScheduledQueueFinishedListener] runs
+     * after every download released by a schedule start has completed successfully.
+     * Default is false. This is not a builder option. An empty queue, a single completion
+     * while others remain, a failure, a pause, or the window ending by itself does not fire it.
+     */
+    var finishAfterScheduledQueue: Boolean
+        get() = scheduler.isFinishAfterScheduledQueue()
+        set(value) = scheduler.setFinishAfterScheduledQueue(value)
+
+    fun setScheduledQueueFinishedListener(listener: ScheduledQueueFinishedListener?) {
+        queueFinishedListener = listener
+    }
+
     var scheduleEnabled: Boolean
         get() = scheduler.isSchedulingEnabled()
         set(value) {

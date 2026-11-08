@@ -38,3 +38,18 @@ internal fun shouldStartWhenWindowOpens(
         else -> false
     }
 }
+
+/**
+ * True only when this schedule-start cohort is non-empty and every one of its downloads
+ * has completed, nothing is still transferring, and the host asked for this behavior.
+ * A new queue entry that is not in the cohort does not block or trigger it.
+ */
+internal fun scheduledQueueRunFinished(
+    finishEnabled: Boolean,
+    cohortIds: Set<String>,
+    statusById: Map<String, DownloadStatus>,
+    runningIds: Set<String>
+): Boolean {
+    if (!finishEnabled || cohortIds.isEmpty() || runningIds.isNotEmpty()) return false
+    return cohortIds.all { statusById[it] == DownloadStatus.COMPLETED }
+}

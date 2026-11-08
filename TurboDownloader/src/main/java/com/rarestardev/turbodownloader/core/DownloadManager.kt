@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
@@ -51,6 +53,11 @@ class DownloadManager(
     private val schedulePausedIds = mutableSetOf<DownloadId>()
 
     private val schedulerLock = Any()
+    private val cohortLock = Any()
+    private var scheduledCohort = emptySet<String>()
+    private var cohortNotified = false
+
+    internal var onScheduledQueueFinished: (() -> Unit)? = null
 
     private val windowWatcher = ScheduleWindowWatcher(
         scope = scope,
@@ -294,6 +301,17 @@ class DownloadManager(
 
         scope.launch(Dispatchers.IO) {
             val downloads = dao.getAllDownloadsOnce()
+            if (releaseHeldQueue) {
+                val cohort = downloads.filter { entity ->
+                    entity.status == DownloadStatus.QUEUED && shouldStartWhenWindowOpens(
+                        entity.status,
+                        entity.pauseReason,
+                        isManuallyPaused(DownloadId(entity.id)),
+                        releaseHeldQueue = true
+                    )
+                }.map { it.id }.toSet()
+                if (cohort.isNotEmpty()) beginScheduledCohort(cohort)
+            }
 
             downloads.forEach { entity ->
                 val id = DownloadId(entity.id)
@@ -460,6 +478,35 @@ class DownloadManager(
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "ensureServiceRunning.")
     }
 
+    private fun beginScheduledCohort(ids: Set<String>) {
+        synchronized(cohortLock) {
+            scheduledCohort = ids
+            cohortNotified = false
+        }
+    }
+
+    private suspend fun maybeFinishScheduledQueueRun() {
+        if (!scheduleStorage.isFinishAfterScheduledQueue()) return
+        val cohort = synchronized(cohortLock) { scheduledCohort }
+        val rows = dao.getAllDownloadsOnce()
+        val statusById = rows.associate { it.id to it.status }
+        val runningIds = rows.filter { it.status == DownloadStatus.RUNNING }.map { it.id }.toSet()
+        if (!scheduledQueueRunFinished(true, cohort, statusById, runningIds)) return
+        val fire = synchronized(cohortLock) {
+            if (cohortNotified || scheduledCohort != cohort) {
+                false
+            } else {
+                cohortNotified = true
+                true
+            }
+        }
+        if (!fire) return
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Scheduled queue finished; stopping download service")
+        context.stopService(Intent(context, DownloadService::class.java))
+        val callback = onScheduledQueueFinished ?: return
+        Handler(Looper.getMainLooper()).post { callback() }
+    }
+
     private fun stopServiceIfIdle() {
         val active =
             _state.value.values.any { it is DownloadState.Running || it is DownloadState.Paused }
@@ -552,6 +599,7 @@ class DownloadManager(
 
                 dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
                 update(id, DownloadState.Completed(id, resultUri))
+                maybeFinishScheduledQueueRun()
                 return
 
             } catch (e: Exception) {
@@ -584,6 +632,7 @@ class DownloadManager(
                 } else {
                     dao.updateStatus(id.value, DownloadStatus.FAILED.name)
                     update(id, DownloadState.Failed(id, e))
+                    maybeFinishScheduledQueueRun()
                     val tempDir = File(context.filesDir, "chunks_${entity.id}")
                     if (tempDir.exists()) tempDir.deleteRecursively()
                     return

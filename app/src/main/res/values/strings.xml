@@ -6,6 +6,8 @@
     <string name="queue_held">Held in queue. It does not start until you press Start, or until an enabled schedule reaches its start time.</string>
     <string name="start_queued">Start</string>
     <string name="schedule_enabled">Scheduling</string>
+    <string name="schedule_finish_queue">Close when the scheduled queue finishes</string>
+    <string name="schedule_finish_queue_detail">After every download started by the schedule has completed, the download notification stops and this screen closes. Android does not force-stop the app. A failure, pause, or another active download keeps it open. Items queued after that run stay held.</string>
     <string name="schedule_enabled_on">Scheduling is on. Downloads follow the saved window.</string>
     <string name="schedule_enabled_off">Scheduling is off. Downloads are not limited by a window.</string>
     <string name="schedule_kept">The saved window is kept and applied again when scheduling is turned on.</string>

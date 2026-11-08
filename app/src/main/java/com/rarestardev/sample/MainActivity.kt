@@ -97,6 +97,9 @@ class MainActivity : ComponentActivity() {
         if (downloader.scheduleEnabled) {
             downloader.reconcileSchedule()
         }
+        downloader.setScheduledQueueFinishedListener {
+            finishAndRemoveTask()
+        }
 
         enableEdgeToEdge()
 

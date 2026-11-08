@@ -6,6 +6,8 @@
     <string name="queue_held">در صف مانده است. تا دکمهٔ شروع، یا تا رسیدن زمان شروعِ زمان‌بندیِ روشن، آغاز نمی‌شود.</string>
     <string name="start_queued">شروع</string>
     <string name="schedule_enabled">فعال‌سازی</string>
+    <string name="schedule_finish_queue">با تمام شدن صف زمان‌بندی، بسته شود</string>
+    <string name="schedule_finish_queue_detail">وقتی همهٔ دانلودهایی که با شروع زمان‌بندی راه افتاده‌اند تمام شوند، اعلان دانلود متوقف و این صفحه بسته می‌شود. اندروید برنامه را force-stop نمی‌کند. خطا، مکث، یا دانلود فعال دیگر آن را باز نگه می‌دارد. موردی که بعد از این اجرا به صف اضافه شود همان‌جا می‌ماند.</string>
     <string name="schedule_enabled_on">زمان‌بندی روشن است و دانلودها از بازهٔ ذخیره‌شده پیروی می‌کنند.</string>
     <string name="schedule_enabled_off">زمان‌بندی خاموش است و دانلودها با بازه محدود نمی‌شوند.</string>
     <string name="schedule_kept">بازهٔ ذخیره‌شده می‌ماند و با روشن کردن دوباره اعمال می‌شود.</string>

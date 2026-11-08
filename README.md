@@ -159,6 +159,19 @@ Turning scheduling off keeps the saved window but stops enforcing it. Downloads 
 
 `addToQueues` never starts a download by itself. Not when scheduling is off, not when the window is already open, and not when a second item is added. Call `resume(id)` to start that held item explicitly. An enabled schedule also starts held items when its start time arrives.
 
+After that scheduled run, the host can ask the library to stop its own download service and report that the queue finished:
+
+```kotlin
+downloader.finishAfterScheduledQueue = true
+downloader.setScheduledQueueFinishedListener {
+    finishAndRemoveTask()
+}
+```
+
+`finishAfterScheduledQueue` defaults to false, is saved, and is not a builder option. The library stops only its download foreground service, which removes that notification. `finishAndRemoveTask()` finishes the app's activities and removes its task from Recents. It does not kill the process and it is not a force-stop. Android may keep the process cached.
+
+The callback runs once per schedule start, and only when every download released by that start has completed and nothing is still transferring. It does not run for an empty queue, for one finished item while another from that run is still queued, running, paused, retrying, failed, or cancelled, or merely because the window ended. A download you paused before the run, or added to the queue after the run started, is not part of that run. A new queue entry stays held. An unrelated download that is still running keeps the service and the screen up. A failed item in the run stays unresolved until it later completes successfully.
+
 Change the window only while scheduling is on:
 
 ```kotlin

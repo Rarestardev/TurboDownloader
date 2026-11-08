@@ -74,6 +74,7 @@ fun ScheduleRoute(
     val locale = remember { Locale.getDefault() }
     val saved = remember(resumeTick, revision) { downloader.currentSchedule() }
     val schedulingEnabled = remember(resumeTick, revision) { downloader.scheduleEnabled }
+    val finishAfterQueue = remember(resumeTick, revision) { downloader.finishAfterScheduledQueue }
     val lastSignal = remember(resumeTick, revision, now) { downloader.lastScheduleSignal() }
     val access = remember(resumeTick, revision) { downloader.exactAlarmAccess() }
 
@@ -104,6 +105,11 @@ fun ScheduleRoute(
         onBack = onBack,
         onSchedulingEnabled = { enabled ->
             downloader.scheduleEnabled = enabled
+            revision++
+        },
+        finishAfterQueue = finishAfterQueue,
+        onFinishAfterQueue = { enabled ->
+            downloader.finishAfterScheduledQueue = enabled
             revision++
         },
         onSave = { start, end ->
@@ -145,6 +151,7 @@ private fun ScheduleScreen(
     saved: DownloadSchedule?,
     lastSignalLabel: String?,
     schedulingEnabled: Boolean,
+    finishAfterQueue: Boolean,
     phase: SchedulePhase,
     exactAlarmRequired: Boolean,
     exactAlarmGranted: Boolean,
@@ -154,6 +161,7 @@ private fun ScheduleScreen(
     locale: Locale,
     onBack: () -> Unit,
     onSchedulingEnabled: (Boolean) -> Unit,
+    onFinishAfterQueue: (Boolean) -> Unit,
     onSave: (Long, Long) -> Unit,
     onClear: () -> Unit,
     onQueueSamples: () -> Unit,
@@ -196,7 +204,13 @@ private fun ScheduleScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SchedulingSwitch(schedulingEnabled, saved != null, onSchedulingEnabled)
+            SchedulingSwitch(
+                schedulingEnabled,
+                saved != null,
+                onSchedulingEnabled,
+                finishAfterQueue,
+                onFinishAfterQueue
+            )
             PhaseCard(
                 enforced = schedulingEnabled,
                 phase = phase,
@@ -317,7 +331,9 @@ private fun ScheduleScreen(
 private fun SchedulingSwitch(
     enabled: Boolean,
     hasSavedWindow: Boolean,
-    onChange: (Boolean) -> Unit
+    onChange: (Boolean) -> Unit,
+    finishAfterQueue: Boolean,
+    onFinishAfterQueue: (Boolean) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -337,6 +353,19 @@ private fun SchedulingSwitch(
             if (!enabled && hasSavedWindow) {
                 Text(stringResource(R.string.schedule_kept))
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.schedule_finish_queue),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(checked = finishAfterQueue, onCheckedChange = onFinishAfterQueue)
+            }
+            Text(stringResource(R.string.schedule_finish_queue_detail))
         }
     }
 }

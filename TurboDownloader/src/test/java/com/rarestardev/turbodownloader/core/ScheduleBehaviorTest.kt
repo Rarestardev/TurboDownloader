@@ -153,6 +153,49 @@ class ScheduleBehaviorTest {
     }
 
     @Test
+    fun finishAfterQueuePreference_defaultsOff_andSurvivesClearingTheWindow() {
+        val store = PreferenceScheduleStore(MemoryPrefs())
+        assertFalse(store.isFinishAfterScheduledQueue())
+        store.setFinishAfterScheduledQueue(true)
+        store.save(DownloadSchedule(10, 20))
+        store.clear()
+        assertTrue(store.isFinishAfterScheduledQueue())
+        assertFalse(store.isSchedulingEnabled())
+    }
+
+    @Test
+    fun finishAfterQueue_requiresEveryCohortItemCompleted() {
+        val cohort = setOf("a", "b")
+        assertFalse(scheduledQueueRunFinished(false, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.COMPLETED), emptySet()))
+        assertFalse(scheduledQueueRunFinished(true, emptySet(), emptyMap(), emptySet()))
+        assertFalse(scheduledQueueRunFinished(true, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.RUNNING), setOf("b")))
+        assertFalse(scheduledQueueRunFinished(true, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.QUEUED), emptySet()))
+        assertFalse(scheduledQueueRunFinished(true, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.PAUSED), emptySet()))
+        assertFalse(scheduledQueueRunFinished(true, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.FAILED), emptySet()))
+        assertFalse(scheduledQueueRunFinished(true, cohort, mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.CANCELLED), emptySet()))
+        assertFalse(
+            scheduledQueueRunFinished(
+                true,
+                cohort,
+                mapOf("a" to DownloadStatus.COMPLETED, "b" to DownloadStatus.COMPLETED),
+                setOf("other")
+            )
+        )
+        assertTrue(
+            scheduledQueueRunFinished(
+                true,
+                cohort,
+                mapOf(
+                    "a" to DownloadStatus.COMPLETED,
+                    "b" to DownloadStatus.COMPLETED,
+                    "later" to DownloadStatus.QUEUED
+                ),
+                emptySet()
+            )
+        )
+    }
+
+    @Test
     fun disablingScheduling_keepsWindow_andStopsGating() {
         val store = PreferenceScheduleStore(MemoryPrefs())
         val schedule = DownloadSchedule(10, 20)
@@ -258,6 +301,11 @@ private class MemoryScheduleStore : ScheduleStore {
     override fun isSchedulingEnabled(): Boolean = enabled
     override fun setSchedulingEnabled(enabled: Boolean) {
         this.enabled = enabled
+    }
+    private var finishAfterQueue = false
+    override fun isFinishAfterScheduledQueue(): Boolean = finishAfterQueue
+    override fun setFinishAfterScheduledQueue(enabled: Boolean) {
+        finishAfterQueue = enabled
     }
     override fun clear() {
         schedule = null
