@@ -1,54 +1,59 @@
 package com.rarestardev.turbodownloader.storage
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
-import com.rarestardev.turbodownloader.model.DownloadSchedule
 
-internal class DownloadScheduleStorage(context: Context) {
-
-    companion object {
-        private const val PREF_NAME = "turbo_download_scheduler"
-
-        private const val KEY_START = "schedule_start"
-        private const val KEY_END = "schedule_end"
-        private const val KEY_ENABLED = "schedule_enabled"
-    }
-
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREF_NAME,
-        Context.MODE_PRIVATE
-    )
-
-    fun save(schedule: DownloadSchedule) {
-        prefs.edit {
-            putLong(KEY_START, schedule.startAtMillis)
-                .putLong(KEY_END, schedule.endAtMillis)
-                .putBoolean(KEY_ENABLED, true)
-        }
-    }
-
-    fun get(): DownloadSchedule? {
-        if (!isEnabled()) return null
-
-        val start = prefs.getLong(KEY_START, -1L)
-        val end = prefs.getLong(KEY_END, -1L)
-
-        if (start !in 1..<end) return null
-
-        return DownloadSchedule(
-            startAtMillis = start,
-            endAtMillis = end
+internal class DownloadScheduleStorage(
+    context: Context
+) : ScheduleStore by PreferenceScheduleStore(
+    SharedSchedulePrefs(
+        context.applicationContext.getSharedPreferences(
+            PREF_NAME,
+            Context.MODE_PRIVATE
         )
+    )
+) {
+    companion object {
+        const val PREF_NAME = "turbo_download_scheduler"
+    }
+}
+
+internal class SharedSchedulePrefs(
+    private val preferences: SharedPreferences
+) : SchedulePrefs {
+    override fun getLong(key: String, defaultValue: Long): Long {
+        return preferences.getLong(key, defaultValue)
     }
 
-    fun isEnabled(): Boolean =
-        prefs.getBoolean(KEY_ENABLED, false)
+    override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
+        return preferences.getBoolean(key, defaultValue)
+    }
 
-    fun clear() {
-        prefs.edit {
-            remove(KEY_START)
-                .remove(KEY_END)
-                .putBoolean(KEY_ENABLED, false)
+    override fun getString(key: String): String? {
+        return preferences.getString(key, null)
+    }
+
+    override fun edit(transform: SchedulePrefEditor.() -> Unit) {
+        preferences.edit {
+            val editor = this
+            object : SchedulePrefEditor {
+                override fun putLong(key: String, value: Long) {
+                    editor.putLong(key, value)
+                }
+
+                override fun putBoolean(key: String, value: Boolean) {
+                    editor.putBoolean(key, value)
+                }
+
+                override fun putString(key: String, value: String?) {
+                    editor.putString(key, value)
+                }
+
+                override fun remove(key: String) {
+                    editor.remove(key)
+                }
+            }.transform()
         }
     }
 }

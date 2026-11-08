@@ -12,6 +12,7 @@ import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.listener.NetworkConnectionListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
 import com.rarestardev.turbodownloader.model.DownloadSchedule
+import com.rarestardev.turbodownloader.model.ScheduleSignalRecord
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
@@ -162,6 +163,9 @@ class TurboDownloader private constructor(
      * Sets a one-time download schedule.
      *
      * Downloads are allowed only between startAtMillis and endAtMillis.
+     * The window does not repeat. After it ends, downloads stay paused until [clearSchedule].
+     * On Android 12 and later the window can open while the app is in the background only when
+     * exact alarms are allowed. [exactAlarmAccess] reports that constraint.
      */
     fun setSchedule(schedule: DownloadSchedule) {
         check(enableSchedule) {
@@ -169,6 +173,7 @@ class TurboDownloader private constructor(
         }
 
         scheduler.schedule(schedule)
+        manager.armScheduleWindow()
 
         if (schedule.isActive()) {
             manager.onScheduleStart()
@@ -186,7 +191,32 @@ class TurboDownloader private constructor(
         }
 
         scheduler.cancel()
+        manager.disarmScheduleWindow()
         manager.onScheduleStart()
+    }
+
+    fun currentSchedule(): DownloadSchedule? = scheduler.current()
+
+    fun lastScheduleSignal(): ScheduleSignalRecord? = scheduler.lastSignal()
+
+    fun exactAlarmAccess(): ExactAlarmAccess = scheduler.exactAlarmAccess()
+
+    /**
+     * Re-arms alarms from the saved window and applies it to downloads already on disk.
+     * Opening the app after a reboot or a force-stop is enough to restore the window.
+     */
+    fun reconcileSchedule() {
+        check(enableSchedule) {
+            "Scheduler is disabled. Use enableSchedule(true) in Builder."
+        }
+        scheduler.restoreAfterBoot()
+        manager.armScheduleWindow()
+        val schedule = scheduler.current() ?: return
+        if (schedule.isActive()) {
+            manager.onScheduleStart()
+        } else {
+            manager.onScheduleEnd()
+        }
     }
 
     private suspend fun isInternetAvailable(): Boolean = withContext(Dispatchers.IO) {

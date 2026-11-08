@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
+import com.rarestardev.turbodownloader.model.ScheduleSignal
 import com.rarestardev.turbodownloader.service.DownloadService
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
@@ -51,15 +52,38 @@ class DownloadManager(
 
     private val schedulerLock = Any()
 
+    private val windowWatcher = ScheduleWindowWatcher(
+        scope = scope,
+        clock = { System.currentTimeMillis() },
+        readSchedule = { scheduleStorage.get() },
+        onStart = {
+            scheduleStorage.recordSignal(ScheduleSignal.START, System.currentTimeMillis())
+            onScheduleStart()
+        },
+        onEnd = {
+            scheduleStorage.recordSignal(ScheduleSignal.END, System.currentTimeMillis())
+            onScheduleEnd()
+        }
+    )
+
     private fun isPaused(id: DownloadId): Boolean =
         synchronized(schedulerLock) {
             id in manualPausedIds || id in schedulePausedIds
         }
 
+    private fun isManuallyPaused(id: DownloadId): Boolean =
+        synchronized(schedulerLock) { id in manualPausedIds }
+
     private fun canStartNow(): Boolean {
-        val schedule = scheduleStorage.get() ?: return true
-        return schedule.isActive()
+        return ScheduleGate.allowsDownload(
+            scheduleStorage.get(),
+            System.currentTimeMillis()
+        )
     }
+
+    internal fun armScheduleWindow() = windowWatcher.arm()
+
+    internal fun disarmScheduleWindow() = windowWatcher.disarm()
 
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
@@ -256,6 +280,7 @@ class DownloadManager(
     }
 
     fun onScheduleStart() {
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule start")
         if (!canStartNow()) return
 
         scope.launch(Dispatchers.IO) {
@@ -288,6 +313,15 @@ class DownloadManager(
     }
 
     fun onScheduleEnd() {
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule pause")
+        val activeIds = synchronized(jobs) {
+            jobs.filterValues { it.isActive }.keys.toList()
+        }
+        synchronized(schedulerLock) {
+            activeIds.map { DownloadId(it) }
+                .filter { it !in manualPausedIds }
+                .forEach { schedulePausedIds.add(it) }
+        }
         scope.launch(Dispatchers.IO) {
             val downloads = dao.getAllDownloadsOnce()
 
@@ -457,7 +491,8 @@ class DownloadManager(
         var downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
 
         while (currentAttempt <= maxRetries){
-            if (isPaused(id)){
+            if (shouldStop(id)){
+                persistScheduleHold(id)
                 val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
                 update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
                 return
@@ -494,10 +529,11 @@ class DownloadManager(
                             )
                         }
                     },
-                    isPaused = { isPaused(id) }
+                    isPaused = { shouldStop(id) }
                 )
 
-                if (isPaused(id)) {
+                if (shouldStop(id)) {
+                    persistScheduleHold(id)
                     update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
                     return
                 }
@@ -582,6 +618,22 @@ class DownloadManager(
 
             stopServiceIfIdle()
         }
+    }
+
+    private fun shouldStop(id: DownloadId): Boolean {
+        return isPaused(id) || (!isManuallyPaused(id) && !canStartNow())
+    }
+
+    private suspend fun persistScheduleHold(id: DownloadId) {
+        if (isManuallyPaused(id) || canStartNow()) return
+        synchronized(schedulerLock) {
+            schedulePausedIds.add(id)
+        }
+        dao.updateStatusAndPauseReason(
+            id.value,
+            DownloadStatus.PAUSED.name,
+            PauseReason.SCHEDULE.name
+        )
     }
 
     private fun computeAutoThreadCount(fileSizeBytes: Long): Int {

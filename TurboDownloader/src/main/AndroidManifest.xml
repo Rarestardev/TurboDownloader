@@ -34,7 +34,12 @@
         <receiver
             android:name=".recevier.DownloadScheduleReceiver"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.rarestardev.turbodownloader.SCHEDULE_START" />
+                <action android:name="com.rarestardev.turbodownloader.SCHEDULE_END" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".recevier.DownloadScheduleBootReceiver"

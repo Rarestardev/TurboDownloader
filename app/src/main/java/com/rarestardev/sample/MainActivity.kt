@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,9 +58,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import com.rarestardev.sample.schedule.ScheduleRoute
 import com.rarestardev.sample.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
@@ -72,6 +76,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var downloader: TurboDownloader
+    private var resumeTick by mutableIntStateOf(0)
 
     @SuppressLint("ObsoleteSdkInt")
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -88,7 +93,9 @@ class MainActivity : ComponentActivity() {
             .setThread(8)
 //            .setDir(dir)
             .setAutoThreading(true)
+            .enableSchedule(true)
             .build()
+        downloader.reconcileSchedule()
 
         enableEdgeToEdge()
 
@@ -97,6 +104,11 @@ class MainActivity : ComponentActivity() {
                 MainUiScreen()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick++
     }
 
     override fun onDestroy() {
@@ -113,6 +125,18 @@ class MainActivity : ComponentActivity() {
         val queuedList by downloader.queuedListDownload().collectAsState(emptyList())
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
+        var showSchedule by remember {
+            mutableStateOf(intent.getBooleanExtra("open_schedule", false))
+        }
+
+        if (showSchedule) {
+            ScheduleRoute(
+                downloader = downloader,
+                resumeTick = resumeTick,
+                onBack = { showSchedule = false }
+            )
+            return
+        }
 
         LaunchedEffect(downloader.hasNotificationPermission()) {
             hasPermission = downloader.hasNotificationPermission()
@@ -134,6 +158,12 @@ class MainActivity : ComponentActivity() {
                     contentDescription = null,
                     modifier = Modifier.size(60.dp)
                 )
+
+                TextButton(onClick = { showSchedule = true }) {
+                    Icon(Icons.Default.Schedule, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.schedule_open))
+                }
 
                 OutlinedTextField(
                     value = urlAddressState,

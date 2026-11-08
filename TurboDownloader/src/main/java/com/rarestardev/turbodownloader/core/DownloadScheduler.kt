@@ -5,11 +5,17 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import com.rarestardev.turbodownloader.model.DownloadSchedule
+import com.rarestardev.turbodownloader.model.ScheduleSignal
+import com.rarestardev.turbodownloader.model.ScheduleSignalRecord
 import com.rarestardev.turbodownloader.recevier.DownloadScheduleReceiver
 import com.rarestardev.turbodownloader.storage.DownloadScheduleStorage
-import kotlin.jvm.java
+import com.rarestardev.turbodownloader.utils.TurboConstants
+import androidx.core.net.toUri
 
 internal class DownloadScheduler(context: Context) {
 
@@ -20,143 +26,115 @@ internal class DownloadScheduler(context: Context) {
 
     private val storage = DownloadScheduleStorage(appContext)
 
-    fun schedule(schedule: DownloadSchedule) {
-        require(schedule.endAtMillis > System.currentTimeMillis()) {
-            "Schedule end time must be in the future"
-        }
+    private val engine = ScheduleEngine(
+        storage = storage,
+        clock = { System.currentTimeMillis() },
+        delivery = { SchedulePlanner.delivery(Build.VERSION.SDK_INT, exactAlarmsAllowed()) },
+        cancelAlarm = { signal -> alarmManager.cancel(createPendingIntent(signal)) },
+        scheduleAlarm = { alarm -> scheduleAlarm(alarm) },
+        dispatchNow = { signal -> sendAction(signal) }
+    )
 
-        storage.save(schedule)
+    fun schedule(schedule: DownloadSchedule) = engine.schedule(schedule)
 
-        cancelStartAlarm()
-        cancelEndAlarm()
+    fun cancel() = engine.cancel()
 
-        val now = System.currentTimeMillis()
+    fun restoreAfterBoot() = engine.restoreAfterBoot()
 
-        if (now < schedule.startAtMillis) {
-            scheduleAlarm(
-                schedule.startAtMillis,
-                DownloadScheduleReceiver.ACTION_START
-            )
+    fun current(): DownloadSchedule? = engine.current()
+
+    fun lastSignal(): ScheduleSignalRecord? = storage.lastSignal()
+
+    fun exactAlarmAccess(): ExactAlarmAccess {
+        val required = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val granted = exactAlarmsAllowed()
+        val settingsIntent = if (required && !granted) {
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = "package:${appContext.packageName}".toUri()
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         } else {
-            sendAction(DownloadScheduleReceiver.ACTION_START)
+            null
         }
-
-        scheduleAlarm(
-            schedule.endAtMillis,
-            DownloadScheduleReceiver.ACTION_END
+        return ExactAlarmAccess(
+            required = required,
+            granted = granted,
+            settingsIntent = settingsIntent
         )
     }
 
-    fun cancel() {
-        cancelStartAlarm()
-        cancelEndAlarm()
-        storage.clear()
-    }
-
-    fun restoreAfterBoot() {
-        val schedule = storage.get() ?: return
-        val now = System.currentTimeMillis()
-
-        when {
-            now >= schedule.endAtMillis -> {
-                // برای رسیدگی به دانلودهایی که قبل از Restart در حال اجرا بوده‌اند.
-                scheduleAlarm(
-                    now + 1_000L,
-                    DownloadScheduleReceiver.ACTION_END
-                )
-            }
-
-            now >= schedule.startAtMillis -> {
-                // به جای اجرای مستقیم سرویس از BootReceiver،
-                // یک Alarm برای شروع مجدد ثبت می‌کنیم.
-                scheduleAlarm(
-                    now + 1_000L,
-                    DownloadScheduleReceiver.ACTION_START
-                )
-
-                scheduleAlarm(
-                    schedule.endAtMillis,
-                    DownloadScheduleReceiver.ACTION_END
-                )
-            }
-
-            else -> {
-                scheduleAlarm(
-                    schedule.startAtMillis,
-                    DownloadScheduleReceiver.ACTION_START
-                )
-
-                scheduleAlarm(
-                    schedule.endAtMillis,
-                    DownloadScheduleReceiver.ACTION_END
-                )
-            }
+    private fun exactAlarmsAllowed(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
         }
     }
 
-    private fun scheduleAlarm(
-        triggerAt: Long,
-        action: String
-    ) {
-        val pendingIntent = createPendingIntent(action)
-
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            alarmManager.canScheduleExactAlarms()
-        ) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAt,
-                pendingIntent
+    @SuppressLint("MissingPermission")
+    private fun scheduleAlarm(alarm: PlannedAlarm) {
+        val pendingIntent = createPendingIntent(alarm.signal)
+        try {
+            if (alarm.delivery == AlarmDelivery.EXACT) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    alarm.triggerAtMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    alarm.triggerAtMillis,
+                    pendingIntent
+                )
+            }
+        } catch (security: SecurityException) {
+            Log.e(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "Exact alarm was rejected; falling back to an inexact alarm",
+                security
             )
-        } else {
             alarmManager.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
-                triggerAt,
+                alarm.triggerAtMillis,
                 pendingIntent
             )
         }
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Scheduled ${alarm.signal} at ${alarm.triggerAtMillis} via ${alarm.delivery}"
+        )
     }
 
-    private fun sendAction(action: String) {
+    private fun sendAction(signal: ScheduleSignal) {
         val intent = Intent(
             appContext,
             DownloadScheduleReceiver::class.java
-        ).setAction(action)
-
+        ).setAction(actionFor(signal))
         appContext.sendBroadcast(intent)
     }
 
-    private fun createPendingIntent(action: String): PendingIntent {
-        val requestCode = when (action) {
-            DownloadScheduleReceiver.ACTION_START -> 1001
-            DownloadScheduleReceiver.ACTION_END -> 1002
-            else -> 1003
+    private fun createPendingIntent(signal: ScheduleSignal): PendingIntent {
+        val requestCode = when (signal) {
+            ScheduleSignal.START -> 1001
+            ScheduleSignal.END -> 1002
         }
-
         val intent = Intent(
             appContext,
             DownloadScheduleReceiver::class.java
-        ).setAction(action)
-
+        ).setAction(actionFor(signal))
         return PendingIntent.getBroadcast(
             appContext,
             requestCode,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or
-                    PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
-    private fun cancelStartAlarm() {
-        alarmManager.cancel(
-            createPendingIntent(DownloadScheduleReceiver.ACTION_START)
-        )
-    }
-
-    private fun cancelEndAlarm() {
-        alarmManager.cancel(
-            createPendingIntent(DownloadScheduleReceiver.ACTION_END)
-        )
+    private fun actionFor(signal: ScheduleSignal): String {
+        return when (signal) {
+            ScheduleSignal.START -> DownloadScheduleReceiver.ACTION_START
+            ScheduleSignal.END -> DownloadScheduleReceiver.ACTION_END
+        }
     }
 }
