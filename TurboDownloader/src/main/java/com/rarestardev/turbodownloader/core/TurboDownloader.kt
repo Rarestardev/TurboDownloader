@@ -186,6 +186,20 @@ class TurboDownloader private constructor(
      * Default is false. This is not a builder option. An empty queue, a single completion
      * while others remain, a failure, a pause, or the window ending by itself does not fire it.
      */
+    /**
+     * How many files may transfer at the same time. This is separate from the builder
+     * thread count, which is how many chunks one file uses. Default is 1. Valid values are 1 through 5.
+     * Changing it immediately keeps the earliest active files and cooperatively pauses the surplus,
+     * or resumes files that were paused only for this limit. Items still waiting in the queue stay there.
+     */
+    var maxConcurrentDownloads: Int
+        get() = scheduler.maxConcurrentDownloads()
+        set(value) {
+            ConcurrentTransferGate.requireValid(value)
+            scheduler.setMaxConcurrentDownloads(value)
+            manager.applyMaxConcurrentDownloads(value)
+        }
+
     var finishAfterScheduledQueue: Boolean
         get() = scheduler.isFinishAfterScheduledQueue()
         set(value) = scheduler.setFinishAfterScheduledQueue(value)

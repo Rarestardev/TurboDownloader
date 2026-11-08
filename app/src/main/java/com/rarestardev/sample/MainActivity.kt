@@ -169,6 +169,21 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.schedule_open))
                 }
 
+                var concurrentDownloads by remember {
+                    mutableIntStateOf(downloader.maxConcurrentDownloads)
+                }
+                Text(stringResource(R.string.concurrent_downloads, concurrentDownloads))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..5).forEach { count ->
+                        TextButton(onClick = {
+                            downloader.maxConcurrentDownloads = count
+                            concurrentDownloads = count
+                        }) {
+                            Text(if (count == concurrentDownloads) "[$count]" else count.toString())
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = urlAddressState,
                     onValueChange = { urlAddressState = it },

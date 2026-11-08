@@ -1,5 +1,6 @@
 package com.rarestardev.turbodownloader.storage
 
+import com.rarestardev.turbodownloader.core.ConcurrentTransferGate
 import com.rarestardev.turbodownloader.model.DownloadSchedule
 import com.rarestardev.turbodownloader.model.ScheduleSignal
 import com.rarestardev.turbodownloader.model.ScheduleSignalRecord
@@ -12,6 +13,8 @@ internal interface ScheduleStore {
     fun setSchedulingEnabled(enabled: Boolean)
     fun isFinishAfterScheduledQueue(): Boolean
     fun setFinishAfterScheduledQueue(enabled: Boolean)
+    fun maxConcurrentDownloads(): Int
+    fun setMaxConcurrentDownloads(value: Int)
     fun clear()
     fun recordSignal(signal: ScheduleSignal, atMillis: Long)
     fun lastSignal(): ScheduleSignalRecord?
@@ -72,6 +75,17 @@ internal class PreferenceScheduleStore(
         prefs.edit { putBoolean(KEY_FINISH_AFTER_QUEUE, enabled) }
     }
 
+    override fun maxConcurrentDownloads(): Int {
+        val stored = prefs.getLong(KEY_MAX_CONCURRENT, ConcurrentTransferGate.DEFAULT.toLong()).toInt()
+        return stored.takeIf { it in ConcurrentTransferGate.MIN..ConcurrentTransferGate.MAX }
+            ?: ConcurrentTransferGate.DEFAULT
+    }
+
+    override fun setMaxConcurrentDownloads(value: Int) {
+        ConcurrentTransferGate.requireValid(value)
+        prefs.edit { putLong(KEY_MAX_CONCURRENT, value.toLong()) }
+    }
+
     override fun clear() {
         prefs.edit {
             remove(KEY_START)
@@ -102,6 +116,7 @@ internal class PreferenceScheduleStore(
         const val KEY_END = "schedule_end"
         const val KEY_ENABLED = "schedule_enabled"
         const val KEY_FINISH_AFTER_QUEUE = "finish_after_scheduled_queue"
+        const val KEY_MAX_CONCURRENT = "max_concurrent_downloads"
         const val KEY_LAST_SIGNAL = "schedule_last_signal"
         const val KEY_LAST_SIGNAL_AT = "schedule_last_signal_at"
     }

@@ -56,6 +56,10 @@ internal class DownloadScheduler(context: Context) {
     fun setFinishAfterScheduledQueue(enabled: Boolean) =
         storage.setFinishAfterScheduledQueue(enabled)
 
+    fun maxConcurrentDownloads(): Int = storage.maxConcurrentDownloads()
+
+    fun setMaxConcurrentDownloads(value: Int) = storage.setMaxConcurrentDownloads(value)
+
     fun lastSignal(): ScheduleSignalRecord? = storage.lastSignal()
 
     fun exactAlarmAccess(): ExactAlarmAccess {

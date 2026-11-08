@@ -2,6 +2,7 @@
     <string name="app_name">TurboDownloader</string>
     <string name="schedule_open">Schedule</string>
     <string name="download_now">Download now</string>
+    <string name="concurrent_downloads">Simultaneous downloads: %1$d. This is how many files transfer at once, not how many threads one file uses.</string>
     <string name="add_to_queue">Add to queue</string>
     <string name="queue_held">Held in queue. It does not start until you press Start, or until an enabled schedule reaches its start time.</string>
     <string name="start_queued">Start</string>

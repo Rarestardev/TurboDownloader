@@ -307,6 +307,12 @@ private class MemoryScheduleStore : ScheduleStore {
     override fun setFinishAfterScheduledQueue(enabled: Boolean) {
         finishAfterQueue = enabled
     }
+    private var maxConcurrent = ConcurrentTransferGate.DEFAULT
+    override fun maxConcurrentDownloads(): Int = maxConcurrent
+    override fun setMaxConcurrentDownloads(value: Int) {
+        ConcurrentTransferGate.requireValid(value)
+        maxConcurrent = value
+    }
     override fun clear() {
         schedule = null
         enabled = false

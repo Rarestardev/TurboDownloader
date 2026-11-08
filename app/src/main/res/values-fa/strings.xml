@@ -2,6 +2,7 @@
     <string name="app_name">TurboDownloader</string>
     <string name="schedule_open">زمان‌بندی</string>
     <string name="download_now">دانلود همین حالا</string>
+    <string name="concurrent_downloads">دانلود هم‌زمان: %1$d. این تعداد فایل‌هایی است که با هم منتقل می‌شوند، نه تعداد نخ‌های یک فایل.</string>
     <string name="add_to_queue">افزودن به صف</string>
     <string name="queue_held">در صف مانده است. تا دکمهٔ شروع، یا تا رسیدن زمان شروعِ زمان‌بندیِ روشن، آغاز نمی‌شود.</string>
     <string name="start_queued">شروع</string>

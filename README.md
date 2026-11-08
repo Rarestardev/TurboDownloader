@@ -118,7 +118,7 @@ lifecycleScope.launch {
 
 | Method | Description |
 |---------|-------------|
-| setThread(count) | Number of download threads |
+| setThread(count) | Chunk threads used inside one file. This is not how many files download at once. |
 | setDir(file) | Download destination |
 | setPermissionChecked(true) | Automatically request notification permission |
 | setShowFormatter(true) | Enable speed & ETA formatter |
@@ -154,6 +154,12 @@ Turning scheduling on applies the saved window:
 - a download you paused yourself stays paused
 
 Turning scheduling off keeps the saved window but stops enforcing it. Downloads that the window itself had paused may continue. Items added only to the queue stay held, and a download you paused yourself stays paused. Set `scheduleEnabled = true` again to arm the same window. Opening the app or calling `reconcileSchedule()` does not start those held items.
+
+```kotlin
+downloader.maxConcurrentDownloads = 2
+```
+
+`maxConcurrentDownloads` defaults to 1, is saved, and accepts only 1 through 5. It is not a builder option. It limits how many files transfer at the same time. `setThread` still sets how many chunks one file uses. Lowering the value keeps the earliest active files and cooperatively pauses the later ones, with their progress intact, until a slot is free. That pause is not a manual pause, a failure, or a cancellation. Raising the value resumes those held files. It does not start items that were only added to the queue. A scheduled queue does not count as finished while one of its files is still held for this limit.
 
 `startDownload` is the immediate download. It starts at once when scheduling is off or the window is already open, and waits only when a saved window is still closed.
 

@@ -48,6 +48,7 @@ class DownloadManager(
     private val scheduleStorage = DownloadScheduleStorage(
         context.applicationContext
     )
+    private val transfers = ConcurrentTransferGate(scheduleStorage.maxConcurrentDownloads())
 
     private val manualPausedIds = mutableSetOf<DownloadId>()
     private val schedulePausedIds = mutableSetOf<DownloadId>()
@@ -58,6 +59,29 @@ class DownloadManager(
     private var cohortNotified = false
 
     internal var onScheduledQueueFinished: (() -> Unit)? = null
+
+    internal fun activeTransferIds(): List<String> = transfers.activeIds()
+
+    internal fun applyMaxConcurrentDownloads(value: Int) {
+        val effect = transfers.setCap(value)
+        effect.stop.forEach { raw ->
+            scope.launch(Dispatchers.IO) { markConcurrencyHeld(DownloadId(raw)) }
+        }
+        effect.continueRunning.forEach { raw ->
+            scope.launch(Dispatchers.IO) {
+                dao.updateStatusAndPauseReason(
+                    raw,
+                    DownloadStatus.RUNNING.name,
+                    PauseReason.NONE.name
+                )
+            }
+        }
+        effect.start.forEach { raw -> beginTransfer(DownloadId(raw)) }
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=$value ids=${transfers.activeIds()}"
+        )
+    }
 
     private val windowWatcher = ScheduleWindowWatcher(
         scope = scope,
@@ -75,7 +99,7 @@ class DownloadManager(
 
     private fun isPaused(id: DownloadId): Boolean =
         synchronized(schedulerLock) {
-            id in manualPausedIds || id in schedulePausedIds
+            id in manualPausedIds || id in schedulePausedIds || transfers.isStopRequested(id.value)
         }
 
     private fun isManuallyPaused(id: DownloadId): Boolean =
@@ -97,7 +121,7 @@ class DownloadManager(
         ensureServiceRunning()
         val id = DownloadId(UUID.randomUUID().toString())
 
-        val job = scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val totalSize = downloader.getFileSize(request.uri)
 
             val actualThreadCount = if (request.autoThreading && totalSize > 0) {
@@ -126,13 +150,9 @@ class DownloadManager(
                 return@launch
             }
 
-            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            update(id, DownloadState.Queued(id))
-
-            executeDownload(entity)
+            beginTransfer(id)
         }
 
-        jobs[id.value] = job
         Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "queued download...")
         return id
     }
@@ -159,7 +179,7 @@ class DownloadManager(
             }
 
             ensureServiceRunning()
-            startExistingDownload(entity)
+            beginTransfer(id)
         }
     }
 
@@ -167,6 +187,9 @@ class DownloadManager(
         synchronized(schedulerLock) {
             manualPausedIds.add(id)
             schedulePausedIds.remove(id)
+            if (!transfers.isOccupying(id.value)) {
+                transfers.onSlotReleased(id.value)
+            }
         }
 
         scope.launch(Dispatchers.IO) {
@@ -252,30 +275,41 @@ class DownloadManager(
             }
 
             ensureServiceRunning()
-            startExistingDownload(entity)
+            beginTransfer(id)
         }
     }
 
-    private fun startExistingDownload(entity: DownloadEntity) {
-        val id = DownloadId(entity.id)
+    private fun beginTransfer(id: DownloadId) {
         if (isManuallyPaused(id)) return
-
+        if (!canStartNow()) return
+        if (!transfers.requestSlot(id.value)) {
+            scope.launch(Dispatchers.IO) { markConcurrencyHeld(id) }
+            Log.i(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} held=$id"
+            )
+            return
+        }
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} ids=${transfers.activeIds()}"
+        )
         synchronized(jobs) {
             if (jobs[id.value]?.isActive == true) return
-
             val job = scope.launch(Dispatchers.IO) {
-
-                synchronized(schedulerLock) {
-                    if (id in manualPausedIds) return@launch
-                    schedulePausedIds.remove(id)
+                if (isManuallyPaused(id)) {
+                    startAdmitted(transfers.onSlotReleased(id.value))
+                    return@launch
                 }
-
+                val entity = dao.getDownload(id.value) ?: run {
+                    startAdmitted(transfers.onSlotReleased(id.value))
+                    return@launch
+                }
                 dao.updateStatusAndPauseReason(
                     id.value,
                     DownloadStatus.RUNNING.name,
                     PauseReason.NONE.name
                 )
-
                 executeDownload(
                     entity.copy(
                         status = DownloadStatus.RUNNING,
@@ -283,9 +317,77 @@ class DownloadManager(
                     )
                 )
             }
-
             jobs[id.value] = job
         }
+    }
+
+    private fun startAdmitted(ids: List<String>, afterCurrent: String? = null) {
+        val later = if (afterCurrent == null) emptyList() else ids.filter { it == afterCurrent }
+        val now = if (afterCurrent == null) ids else ids.filter { it != afterCurrent }
+        now.forEach { beginTransfer(DownloadId(it)) }
+        if (later.isNotEmpty()) {
+            jobs[afterCurrent]?.invokeOnCompletion {
+                scope.launch { later.forEach { beginTransfer(DownloadId(it)) } }
+            }
+        }
+    }
+
+    private suspend fun markConcurrencyHeld(id: DownloadId) {
+        if (isManuallyPaused(id)) return
+        val entity = dao.getDownload(id.value) ?: return
+        if (entity.pauseReason == PauseReason.MANUAL) return
+        val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+        dao.updateStatusAndPauseReason(
+            id.value,
+            DownloadStatus.PAUSED.name,
+            PauseReason.CONCURRENCY.name
+        )
+        update(
+            id,
+            DownloadState.Paused(
+                id,
+                DownloadProgress(
+                    totalBytes = entity.totalBytes,
+                    downloadBytes = downloaded,
+                    status = DownloadStatus.PAUSED
+                )
+            )
+        )
+    }
+
+    private suspend fun haltTransfer(id: DownloadId, totalBytes: Long, downloaded: Long) {
+        val manual = isManuallyPaused(id)
+        val schedule = !manual && !canStartNow()
+        val concurrency = !manual && !schedule
+        when {
+            schedule -> persistScheduleHold(id)
+            concurrency -> dao.updateStatusAndPauseReason(
+                id.value,
+                DownloadStatus.PAUSED.name,
+                PauseReason.CONCURRENCY.name
+            )
+        }
+        update(
+            id,
+            DownloadState.Paused(
+                id,
+                DownloadProgress(
+                    totalBytes = totalBytes,
+                    downloadBytes = downloaded,
+                    status = DownloadStatus.PAUSED
+                )
+            )
+        )
+        val next = if (concurrency && transfers.isStopRequested(id.value)) {
+            transfers.onConcurrencyStopped(id.value)
+        } else {
+            transfers.onSlotReleased(id.value)
+        }
+        startAdmitted(next, id.value)
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} ids=${transfers.activeIds()}"
+        )
     }
 
     fun onScheduleStart(releaseHeldQueue: Boolean = false) =
@@ -335,7 +437,7 @@ class DownloadManager(
                 ) {
                     resumeByScheduler(id)
                 } else {
-                    startExistingDownload(entity)
+                    beginTransfer(id)
                 }
             }
         }
@@ -551,9 +653,8 @@ class DownloadManager(
 
         while (currentAttempt <= maxRetries){
             if (shouldStop(id)){
-                persistScheduleHold(id)
                 val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                haltTransfer(id, entity.totalBytes, downloaded)
                 return
             }
 
@@ -592,20 +693,20 @@ class DownloadManager(
                 )
 
                 if (shouldStop(id)) {
-                    persistScheduleHold(id)
-                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    haltTransfer(id, entity.totalBytes, downloaded)
                     return
                 }
 
                 dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
                 update(id, DownloadState.Completed(id, resultUri))
+                startAdmitted(transfers.onSlotReleased(id.value))
                 maybeFinishScheduledQueueRun()
                 return
 
             } catch (e: Exception) {
                 if (isPaused(id)) {
                     val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    haltTransfer(id, entity.totalBytes, downloaded)
                     return
                 }
                 @Suppress("DEPRECATION")
@@ -632,6 +733,7 @@ class DownloadManager(
                 } else {
                     dao.updateStatus(id.value, DownloadStatus.FAILED.name)
                     update(id, DownloadState.Failed(id, e))
+                    startAdmitted(transfers.onSlotReleased(id.value))
                     maybeFinishScheduledQueueRun()
                     val tempDir = File(context.filesDir, "chunks_${entity.id}")
                     if (tempDir.exists()) tempDir.deleteRecursively()
