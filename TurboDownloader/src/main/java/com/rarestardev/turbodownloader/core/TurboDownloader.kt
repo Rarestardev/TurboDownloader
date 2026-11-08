@@ -34,6 +34,10 @@ class TurboDownloader private constructor(
     private var connectionListener: NetworkConnectionListener? = null
     private val torrentManager = TorrentManager(context)
 
+    private val scheduler by lazy {
+        DownloadScheduler(context)
+    }
+
     /**
      * Enables or disables torrent download capability.
      * When set to true, it initializes the torrent engine if not already initialized.
@@ -154,9 +158,36 @@ class TurboDownloader private constructor(
         return url.substringAfterLast('.', "").substringBefore('?')
     }
 
-    fun setSchedule(schedule: DownloadSchedule){}
+    /**
+     * Sets a one-time download schedule.
+     *
+     * Downloads are allowed only between startAtMillis and endAtMillis.
+     */
+    fun setSchedule(schedule: DownloadSchedule) {
+        check(enableSchedule) {
+            "Scheduler is disabled. Use enableSchedule(true) in Builder."
+        }
 
-    fun clearSchedule(){}
+        scheduler.schedule(schedule)
+
+        if (schedule.isActive()) {
+            manager.onScheduleStart()
+        } else {
+            manager.onScheduleEnd()
+        }
+    }
+
+    /**
+     * Removes the current schedule and allows queued downloads to continue.
+     */
+    fun clearSchedule() {
+        check(enableSchedule) {
+            "Scheduler is disabled. Use enableSchedule(true) in Builder."
+        }
+
+        scheduler.cancel()
+        manager.onScheduleStart()
+    }
 
     private suspend fun isInternetAvailable(): Boolean = withContext(Dispatchers.IO) {
         try {
