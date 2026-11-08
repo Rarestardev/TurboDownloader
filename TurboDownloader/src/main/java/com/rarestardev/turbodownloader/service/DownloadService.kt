@@ -17,7 +17,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 internal class DownloadService : Service() {
+    companion object {
+        const val ACTION_SCHEDULE_START =
+            "com.rarestardev.turbodownloader.service.SCHEDULE_START"
 
+        const val ACTION_SCHEDULE_END =
+            "com.rarestardev.turbodownloader.service.SCHEDULE_END"
+    }
     private lateinit var manager: DownloadManager
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var foregroundStarted = false
