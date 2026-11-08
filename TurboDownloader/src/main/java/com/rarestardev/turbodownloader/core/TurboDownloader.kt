@@ -11,6 +11,7 @@ import com.rarestardev.turbodownloader.api.ChunkDownloadApi
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
 import com.rarestardev.turbodownloader.listener.NetworkConnectionListener
 import com.rarestardev.turbodownloader.model.DownloadRequest
+import com.rarestardev.turbodownloader.model.DownloadSchedule
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.utils.FormatUtils
 import com.rarestardev.turbodownloader.utils.TurboConstants
@@ -152,6 +153,10 @@ class TurboDownloader private constructor(
     private fun extractExtension(url: String): String {
         return url.substringAfterLast('.', "").substringBefore('?')
     }
+
+    fun setSchedule(schedule: DownloadSchedule){}
+
+    fun clearSchedule(){}
 
     private suspend fun isInternetAvailable(): Boolean = withContext(Dispatchers.IO) {
         try {
