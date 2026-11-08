@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -39,6 +40,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -67,6 +69,7 @@ fun ScheduleRoute(
     val zone = remember { ScheduleClock.resolveZone() }
     val locale = remember { Locale.getDefault() }
     val saved = remember(resumeTick, revision) { downloader.currentSchedule() }
+    val schedulingEnabled = remember(resumeTick, revision) { downloader.scheduleEnabled }
     val lastSignal = remember(resumeTick, revision, now) { downloader.lastScheduleSignal() }
     val access = remember(resumeTick, revision) { downloader.exactAlarmAccess() }
 
@@ -86,6 +89,7 @@ fun ScheduleRoute(
                 ScheduleSignal.END -> context.getString(R.string.schedule_event_end, whenText)
             }
         },
+        schedulingEnabled = schedulingEnabled,
         phase = schedulePhase(saved, now),
         exactAlarmRequired = access.required,
         exactAlarmGranted = access.granted,
@@ -94,6 +98,10 @@ fun ScheduleRoute(
         zone = zone,
         locale = locale,
         onBack = onBack,
+        onSchedulingEnabled = { enabled ->
+            downloader.scheduleEnabled = enabled
+            revision++
+        },
         onSave = { start, end ->
             downloader.setSchedule(DownloadSchedule(start, end))
             revision++
@@ -118,6 +126,7 @@ fun ScheduleRoute(
 private fun ScheduleScreen(
     saved: DownloadSchedule?,
     lastSignalLabel: String?,
+    schedulingEnabled: Boolean,
     phase: SchedulePhase,
     exactAlarmRequired: Boolean,
     exactAlarmGranted: Boolean,
@@ -126,6 +135,7 @@ private fun ScheduleScreen(
     zone: java.time.ZoneId,
     locale: Locale,
     onBack: () -> Unit,
+    onSchedulingEnabled: (Boolean) -> Unit,
     onSave: (Long, Long) -> Unit,
     onClear: () -> Unit,
     onRequestExactAlarm: () -> Unit
@@ -167,7 +177,9 @@ private fun ScheduleScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            SchedulingSwitch(schedulingEnabled, saved != null, onSchedulingEnabled)
             PhaseCard(
+                enforced = schedulingEnabled,
                 phase = phase,
                 saved = saved,
                 format = format,
@@ -194,6 +206,12 @@ private fun ScheduleScreen(
                         onDate = { picking = PickTarget.EndDate },
                         onTime = { picking = PickTarget.EndTime }
                     )
+                    if (!schedulingEnabled) {
+                        Text(
+                            text = stringResource(R.string.schedule_enable_required),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     draft.issue?.let { issue ->
                         Text(
                             text = stringResource(issueMessage(issue)),
@@ -221,14 +239,14 @@ private fun ScheduleScreen(
             }
             Button(
                 onClick = { onSave(start, end) },
-                enabled = draft.canSave,
+                enabled = schedulingEnabled && draft.canSave,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.schedule_save))
             }
             OutlinedButton(
                 onClick = onClear,
-                enabled = saved != null,
+                enabled = schedulingEnabled && saved != null,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.schedule_clear))
@@ -262,24 +280,58 @@ private fun ScheduleScreen(
 }
 
 @Composable
+private fun SchedulingSwitch(
+    enabled: Boolean,
+    hasSavedWindow: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.schedule_enabled), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = enabled, onCheckedChange = onChange)
+            }
+            Text(
+                stringResource(
+                    if (enabled) R.string.schedule_enabled_on else R.string.schedule_enabled_off
+                )
+            )
+            if (!enabled && hasSavedWindow) {
+                Text(stringResource(R.string.schedule_kept))
+            }
+        }
+    }
+}
+
+@Composable
 private fun PhaseCard(
+    enforced: Boolean,
     phase: SchedulePhase,
     saved: DownloadSchedule?,
     format: (Long) -> String,
     zoneId: String,
     lastSignalLabel: String?
 ) {
-    val container = when (phase) {
-        SchedulePhase.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
-        SchedulePhase.WAITING -> MaterialTheme.colorScheme.tertiaryContainer
-        SchedulePhase.EXPIRED -> MaterialTheme.colorScheme.errorContainer
-        SchedulePhase.NONE -> MaterialTheme.colorScheme.surfaceVariant
+    val container = when {
+        !enforced -> MaterialTheme.colorScheme.surfaceVariant
+        phase == SchedulePhase.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
+        phase == SchedulePhase.WAITING -> MaterialTheme.colorScheme.tertiaryContainer
+        phase == SchedulePhase.EXPIRED -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
-    val label = when (phase) {
-        SchedulePhase.NONE -> R.string.schedule_phase_none
-        SchedulePhase.WAITING -> R.string.schedule_phase_waiting
-        SchedulePhase.ACTIVE -> R.string.schedule_phase_active
-        SchedulePhase.EXPIRED -> R.string.schedule_phase_expired
+    val label = if (!enforced) {
+        R.string.schedule_enabled_off
+    } else {
+        when (phase) {
+            SchedulePhase.NONE -> R.string.schedule_phase_none
+            SchedulePhase.WAITING -> R.string.schedule_phase_waiting
+            SchedulePhase.ACTIVE -> R.string.schedule_phase_active
+            SchedulePhase.EXPIRED -> R.string.schedule_phase_expired
+        }
     }
     Card(
         modifier = Modifier.fillMaxWidth(),

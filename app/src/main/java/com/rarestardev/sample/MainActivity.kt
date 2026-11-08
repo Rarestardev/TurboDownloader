@@ -93,9 +93,10 @@ class MainActivity : ComponentActivity() {
             .setThread(8)
 //            .setDir(dir)
             .setAutoThreading(true)
-            .enableSchedule(true)
             .build()
-        downloader.reconcileSchedule()
+        if (downloader.scheduleEnabled) {
+            downloader.reconcileSchedule()
+        }
 
         enableEdgeToEdge()
 

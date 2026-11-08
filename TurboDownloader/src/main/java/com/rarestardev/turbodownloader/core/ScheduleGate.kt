@@ -7,7 +7,12 @@ internal object ScheduleGate {
      * Downloads are allowed only inside a saved window.
      * An expired window keeps blocking until the schedule is cleared.
      */
-    fun allowsDownload(schedule: DownloadSchedule?, now: Long): Boolean {
+    fun allowsDownload(
+        schedulingEnabled: Boolean,
+        schedule: DownloadSchedule?,
+        now: Long
+    ): Boolean {
+        if (!schedulingEnabled) return true
         return schedule?.isActive(now) ?: true
     }
 }

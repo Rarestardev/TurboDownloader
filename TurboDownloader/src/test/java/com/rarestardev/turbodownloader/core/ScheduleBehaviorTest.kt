@@ -69,9 +69,9 @@ class ScheduleBehaviorTest {
         )
         assertTrue(alarms.all { it.delivery == AlarmDelivery.EXACT })
         assertTrue(dispatched.isEmpty())
-        assertFalse(ScheduleGate.allowsDownload(store.get(), now))
-        assertTrue(ScheduleGate.allowsDownload(store.get(), schedule.startAtMillis))
-        assertFalse(ScheduleGate.allowsDownload(store.get(), schedule.endAtMillis))
+        assertFalse(ScheduleGate.allowsDownload(true, store.get(), now))
+        assertTrue(ScheduleGate.allowsDownload(true, store.get(), schedule.startAtMillis))
+        assertFalse(ScheduleGate.allowsDownload(true, store.get(), schedule.endAtMillis))
         assertEquals(schedule, store.get())
     }
 
@@ -87,7 +87,7 @@ class ScheduleBehaviorTest {
 
         assertEquals(listOf(schedule.endAtMillis), alarms.map { it.triggerAtMillis })
         assertEquals(listOf(ScheduleSignal.START), dispatched)
-        assertTrue(ScheduleGate.allowsDownload(store.get(), now))
+        assertTrue(ScheduleGate.allowsDownload(true, store.get(), now))
     }
 
     @Test
@@ -133,9 +133,41 @@ class ScheduleBehaviorTest {
         val store = MemoryScheduleStore()
         store.save(schedule)
 
-        assertFalse(ScheduleGate.allowsDownload(store.get(), now))
+        assertFalse(ScheduleGate.allowsDownload(true, store.get(), now))
         store.clear()
-        assertTrue(ScheduleGate.allowsDownload(store.get(), now))
+        assertTrue(ScheduleGate.allowsDownload(true, store.get(), now))
+    }
+
+    @Test
+    fun disablingScheduling_keepsWindow_andStopsGating() {
+        val store = PreferenceScheduleStore(MemoryPrefs())
+        val schedule = DownloadSchedule(10, 20)
+        store.save(schedule)
+
+        store.setSchedulingEnabled(false)
+
+        assertNull(store.get())
+        assertEquals(schedule, store.peek())
+        assertTrue(ScheduleGate.allowsDownload(false, store.peek(), 15))
+
+        store.setSchedulingEnabled(true)
+        assertEquals(schedule, store.get())
+        assertFalse(ScheduleGate.allowsDownload(true, store.get(), 5))
+        assertTrue(ScheduleGate.allowsDownload(true, store.get(), 15))
+    }
+
+    @Test
+    fun suspendAlarms_keepsTheSavedWindow() {
+        val now = 1_000_000L
+        val store = MemoryScheduleStore()
+        val engine = engine(store, mutableListOf(), mutableListOf(), now, AlarmDelivery.EXACT)
+        val saved = DownloadSchedule(now + 5_000, now + 15_000)
+        engine.schedule(saved)
+
+        engine.suspendAlarms()
+
+        assertEquals(saved, store.get())
+        assertTrue(store.isSchedulingEnabled())
     }
 
     @Test
@@ -181,7 +213,7 @@ class ScheduleBehaviorTest {
         yield()
 
         assertEquals(listOf("start@5000", "end@8000"), events)
-        assertFalse(ScheduleGate.allowsDownload(stored, now))
+        assertFalse(ScheduleGate.allowsDownload(true, stored, now))
     }
 
     private fun engine(
@@ -202,12 +234,20 @@ class ScheduleBehaviorTest {
 
 private class MemoryScheduleStore : ScheduleStore {
     private var schedule: DownloadSchedule? = null
+    private var enabled = false
     override fun save(schedule: DownloadSchedule) {
         this.schedule = schedule
+        enabled = true
     }
-    override fun get(): DownloadSchedule? = schedule
+    override fun get(): DownloadSchedule? = if (enabled) schedule else null
+    override fun peek(): DownloadSchedule? = schedule
+    override fun isSchedulingEnabled(): Boolean = enabled
+    override fun setSchedulingEnabled(enabled: Boolean) {
+        this.enabled = enabled
+    }
     override fun clear() {
         schedule = null
+        enabled = false
     }
     override fun recordSignal(signal: ScheduleSignal, atMillis: Long) = Unit
     override fun lastSignal(): ScheduleSignalRecord? = null

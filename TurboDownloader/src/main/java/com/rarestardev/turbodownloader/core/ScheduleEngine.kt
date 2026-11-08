@@ -47,6 +47,11 @@ internal class ScheduleEngine(
         storage.clear()
     }
 
+    fun suspendAlarms() {
+        cancelAlarm(ScheduleSignal.START)
+        cancelAlarm(ScheduleSignal.END)
+    }
+
     fun restoreAfterBoot() {
         val schedule = storage.get() ?: return
         val plan = SchedulePlanner.planRestore(schedule, clock(), delivery())

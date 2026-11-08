@@ -20,6 +20,7 @@ TurboDownloader supports resumable downloads, foreground service, download notif
 - 📱 Android 7.0+ (API 24)
 - ⚡ Kotlin First
 - 🧩 Easy Builder API
+- 🕒 One-time download windows, turned on or off at runtime
 - 🎯 Lightweight & easy to integrate
 
 ---
@@ -121,6 +122,61 @@ lifecycleScope.launch {
 | setDir(file) | Download destination |
 | setPermissionChecked(true) | Automatically request notification permission |
 | setShowFormatter(true) | Enable speed & ETA formatter |
+| enableSchedule(true) | Optional. Sets the initial value of `scheduleEnabled` only. Omit it to keep the last saved choice and change scheduling later on the instance. |
+
+---
+
+## Download schedule
+
+Scheduling stays off until you turn it on. Do that on the live instance, not only in the builder:
+
+```kotlin
+val downloader = TurboDownloader.Builder(context)
+    .setThread(8)
+    .build()
+
+if (downloader.scheduleEnabled) {
+    downloader.reconcileSchedule()
+}
+
+downloader.scheduleEnabled = true
+```
+
+`scheduleEnabled` is saved. The next time the process starts, read it and call `reconcileSchedule()` when it is already true so the saved window is armed again after a restart or force-stop.
+
+Turning scheduling on applies the saved window:
+
+- downloads run only between the saved start and end
+- the window does not repeat
+- outside the window, active downloads pause and new or queued downloads wait
+- after the end, they stay paused until `clearSchedule()`
+- a download you paused yourself stays paused
+
+Turning scheduling off keeps the saved window but stops enforcing it. Downloads that were waiting for the window, or paused because of it, continue. Downloads you paused yourself stay paused. Set `scheduleEnabled = true` again to apply the same window.
+
+Change the window only while scheduling is on:
+
+```kotlin
+downloader.scheduleEnabled = true
+downloader.setSchedule(
+    DownloadSchedule(
+        startAtMillis = start,
+        endAtMillis = end
+    )
+)
+downloader.clearSchedule()
+val saved = downloader.currentSchedule()
+```
+
+`setSchedule`, `clearSchedule`, and `reconcileSchedule` throw if scheduling is off. `currentSchedule()` still returns a window that was kept while scheduling is off. The end must be after the start and in the future. A window may already have started.
+
+Exact alarms:
+
+- Android 7 through 11 fire the window at the chosen time without an extra permission.
+- On Android 12 and later, the window opens on time while the app is in the background only if exact alarms are allowed. `exactAlarmAccess()` reports whether that permission is required, whether it is granted, and the settings screen that requests it.
+- While this process is alive, the window still opens and closes on time if exact alarms are unavailable. A stopped process needs the exact alarm to wake it.
+
+The library manifest already declares `SCHEDULE_EXACT_ALARM` and `RECEIVE_BOOT_COMPLETED`.
 
 ---
 
@@ -149,7 +205,7 @@ lifecycleScope.launch {
 - [ ] Download Priority
 - [ ] Download Groups
 - [x] Retry Failed Downloads
-- [ ] Download Scheduler
+- [x] Download Scheduler
 - [ ] Wi-Fi Only Downloads
 - [ ] Download Speed Limiter
 - [x] Download Listener

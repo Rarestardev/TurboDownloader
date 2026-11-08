@@ -27,8 +27,7 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val showFormatter: Boolean,
-    private val autoThreading: Boolean,
-    private val enableSchedule: Boolean
+    private val autoThreading: Boolean
 ) {
     private val manager = ChunkDownloadApi.get(context)
     private var notificationListener: DownloadNotificationListener? = null
@@ -160,17 +159,39 @@ class TurboDownloader private constructor(
     }
 
     /**
+     * Turns scheduling on or off after this object already exists.
+     *
+     * The choice is saved. Turning it on applies the saved window again.
+     * Turning it off keeps that window but stops enforcing it: waiting downloads and
+     * downloads paused by the window continue, while a download paused by the user stays paused.
+     * [setSchedule], [clearSchedule], and [reconcileSchedule] require scheduling to be on.
+     */
+    var scheduleEnabled: Boolean
+        get() = scheduler.isSchedulingEnabled()
+        set(value) {
+            if (scheduler.isSchedulingEnabled() == value) return
+            scheduler.setSchedulingEnabled(value)
+            if (value) {
+                applySavedSchedule()
+            } else {
+                scheduler.suspendAlarms()
+                manager.disarmScheduleWindow()
+                if (scheduler.peek() != null) {
+                    manager.releaseScheduleConstraint()
+                }
+            }
+        }
+
+    /**
      * Sets a one-time download schedule.
      *
-     * Downloads are allowed only between startAtMillis and endAtMillis.
+     * Downloads are allowed only between startAtMillis and endAtMillis while [scheduleEnabled] is true.
      * The window does not repeat. After it ends, downloads stay paused until [clearSchedule].
      * On Android 12 and later the window can open while the app is in the background only when
      * exact alarms are allowed. [exactAlarmAccess] reports that constraint.
      */
     fun setSchedule(schedule: DownloadSchedule) {
-        check(enableSchedule) {
-            "Scheduler is disabled. Use enableSchedule(true) in Builder."
-        }
+        checkScheduleEnabled()
 
         scheduler.schedule(schedule)
         manager.armScheduleWindow()
@@ -183,19 +204,18 @@ class TurboDownloader private constructor(
     }
 
     /**
-     * Removes the current schedule and allows queued downloads to continue.
+     * Removes the saved window and lets waiting downloads continue.
      */
     fun clearSchedule() {
-        check(enableSchedule) {
-            "Scheduler is disabled. Use enableSchedule(true) in Builder."
-        }
+        checkScheduleEnabled()
 
         scheduler.cancel()
         manager.disarmScheduleWindow()
         manager.onScheduleStart()
     }
 
-    fun currentSchedule(): DownloadSchedule? = scheduler.current()
+    /** Saved window, including one that is kept while [scheduleEnabled] is false. */
+    fun currentSchedule(): DownloadSchedule? = scheduler.peek()
 
     fun lastScheduleSignal(): ScheduleSignalRecord? = scheduler.lastSignal()
 
@@ -203,12 +223,20 @@ class TurboDownloader private constructor(
 
     /**
      * Re-arms alarms from the saved window and applies it to downloads already on disk.
-     * Opening the app after a reboot or a force-stop is enough to restore the window.
+     * Call this when the process starts if [scheduleEnabled] is already true.
      */
     fun reconcileSchedule() {
-        check(enableSchedule) {
-            "Scheduler is disabled. Use enableSchedule(true) in Builder."
+        checkScheduleEnabled()
+        applySavedSchedule()
+    }
+
+    private fun checkScheduleEnabled() {
+        check(scheduleEnabled) {
+            "Scheduling is disabled. Set scheduleEnabled = true before changing the schedule."
         }
+    }
+
+    private fun applySavedSchedule() {
         scheduler.restoreAfterBoot()
         manager.armScheduleWindow()
         val schedule = scheduler.current() ?: return
@@ -247,7 +275,7 @@ class TurboDownloader private constructor(
         private var threadCount: Int = 4
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
-        private var enableSchedule: Boolean = false
+        private var scheduleOverride: Boolean? = null
 
         fun setAutoThreading(enabled: Boolean) = apply {
             autoThreading = enabled
@@ -261,7 +289,11 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
-        fun enableSchedule(enabled: Boolean = true) = apply { enableSchedule = enabled }
+        /**
+         * Optional initial value for [TurboDownloader.scheduleEnabled].
+         * Leave this unset to keep whatever was saved last time, and change it later on the instance.
+         */
+        fun enableSchedule(enabled: Boolean = true) = apply { scheduleOverride = enabled }
 
         fun build(): TurboDownloader {
             if (threadCount <= 0)
@@ -270,13 +302,14 @@ class TurboDownloader private constructor(
             if (threadCount > 16)
                 throw IllegalArgumentException("Thread count cannot exceed 16")
 
-            return TurboDownloader(
+            val downloader = TurboDownloader(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 showFormatter = showFormatter,
-                autoThreading = autoThreading,
-                enableSchedule = enableSchedule
+                autoThreading = autoThreading
             )
+            scheduleOverride?.let { downloader.scheduleEnabled = it }
+            return downloader
         }
     }
 }

@@ -76,6 +76,7 @@ class DownloadManager(
 
     private fun canStartNow(): Boolean {
         return ScheduleGate.allowsDownload(
+            scheduleStorage.isSchedulingEnabled(),
             scheduleStorage.get(),
             System.currentTimeMillis()
         )
@@ -279,7 +280,12 @@ class DownloadManager(
         }
     }
 
-    fun onScheduleStart() {
+    fun onScheduleStart() = openWindow(forced = false)
+
+    internal fun releaseScheduleConstraint() = openWindow(forced = true)
+
+    private fun openWindow(forced: Boolean) {
+        if (!forced && !scheduleStorage.isSchedulingEnabled()) return
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule start")
         if (!canStartNow()) return
 
@@ -313,6 +319,7 @@ class DownloadManager(
     }
 
     fun onScheduleEnd() {
+        if (!scheduleStorage.isSchedulingEnabled()) return
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule pause")
         val activeIds = synchronized(jobs) {
             jobs.filterValues { it.isActive }.keys.toList()

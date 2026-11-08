@@ -39,9 +39,17 @@ internal class DownloadScheduler(context: Context) {
 
     fun cancel() = engine.cancel()
 
+    fun suspendAlarms() = engine.suspendAlarms()
+
     fun restoreAfterBoot() = engine.restoreAfterBoot()
 
     fun current(): DownloadSchedule? = engine.current()
+
+    fun peek(): DownloadSchedule? = storage.peek()
+
+    fun isSchedulingEnabled(): Boolean = storage.isSchedulingEnabled()
+
+    fun setSchedulingEnabled(enabled: Boolean) = storage.setSchedulingEnabled(enabled)
 
     fun lastSignal(): ScheduleSignalRecord? = storage.lastSignal()
 

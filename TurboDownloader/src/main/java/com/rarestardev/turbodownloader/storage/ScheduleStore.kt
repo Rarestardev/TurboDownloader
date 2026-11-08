@@ -7,6 +7,9 @@ import com.rarestardev.turbodownloader.model.ScheduleSignalRecord
 internal interface ScheduleStore {
     fun save(schedule: DownloadSchedule)
     fun get(): DownloadSchedule?
+    fun peek(): DownloadSchedule?
+    fun isSchedulingEnabled(): Boolean
+    fun setSchedulingEnabled(enabled: Boolean)
     fun clear()
     fun recordSignal(signal: ScheduleSignal, atMillis: Long)
     fun lastSignal(): ScheduleSignalRecord?
@@ -39,19 +42,25 @@ internal class PreferenceScheduleStore(
     }
 
     override fun get(): DownloadSchedule? {
-        if (!prefs.getBoolean(KEY_ENABLED, false)) return null
-
+        if (!isSchedulingEnabled()) return null
+        peek()?.let { return it }
         val start = prefs.getLong(KEY_START, -1L)
         val end = prefs.getLong(KEY_END, -1L)
-        if (start !in 1L..<end) {
-            clear()
-            return null
-        }
+        if (start != -1L || end != -1L) clear()
+        return null
+    }
 
-        return DownloadSchedule(
-            startAtMillis = start,
-            endAtMillis = end
-        )
+    override fun peek(): DownloadSchedule? {
+        val start = prefs.getLong(KEY_START, -1L)
+        val end = prefs.getLong(KEY_END, -1L)
+        if (start !in 1L..<end) return null
+        return DownloadSchedule(startAtMillis = start, endAtMillis = end)
+    }
+
+    override fun isSchedulingEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
+
+    override fun setSchedulingEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_ENABLED, enabled) }
     }
 
     override fun clear() {

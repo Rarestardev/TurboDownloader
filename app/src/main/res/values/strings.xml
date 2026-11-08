@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">TurboDownloader</string>
     <string name="schedule_open">Schedule</string>
+    <string name="schedule_enabled">Scheduling</string>
+    <string name="schedule_enabled_on">Scheduling is on. Downloads follow the saved window.</string>
+    <string name="schedule_enabled_off">Scheduling is off. Downloads are not limited by a window.</string>
+    <string name="schedule_kept">The saved window is kept and applied again when scheduling is turned on.</string>
+    <string name="schedule_enable_required">Turn scheduling on before saving or clearing a window.</string>
     <string name="schedule_title">Download schedule</string>
     <string name="schedule_back">Back</string>
     <string name="schedule_phase_none">No schedule saved</string>

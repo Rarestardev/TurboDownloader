@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">TurboDownloader</string>
     <string name="schedule_open">زمان‌بندی</string>
+    <string name="schedule_enabled">فعال‌سازی</string>
+    <string name="schedule_enabled_on">زمان‌بندی روشن است و دانلودها از بازهٔ ذخیره‌شده پیروی می‌کنند.</string>
+    <string name="schedule_enabled_off">زمان‌بندی خاموش است و دانلودها با بازه محدود نمی‌شوند.</string>
+    <string name="schedule_kept">بازهٔ ذخیره‌شده می‌ماند و با روشن کردن دوباره اعمال می‌شود.</string>
+    <string name="schedule_enable_required">پیش از ذخیره یا پاک کردن بازه، زمان‌بندی را روشن کنید.</string>
     <string name="schedule_title">زمان‌بندی دانلود</string>
     <string name="schedule_back">بازگشت</string>
     <string name="schedule_phase_none">زمان‌بندی ذخیره نشده</string>
