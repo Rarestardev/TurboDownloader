@@ -12,9 +12,11 @@ import com.rarestardev.turbodownloader.storage.DownloadScheduleStorage
 import kotlin.jvm.java
 
 internal class DownloadScheduler(context: Context) {
+
     private val appContext = context.applicationContext
 
-    private val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    private val alarmManager =
+        appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     private val storage = DownloadScheduleStorage(appContext)
 
@@ -22,38 +24,30 @@ internal class DownloadScheduler(context: Context) {
         require(schedule.endAtMillis > System.currentTimeMillis()) {
             "Schedule end time must be in the future"
         }
+
         storage.save(schedule)
+
         cancelStartAlarm()
         cancelEndAlarm()
 
         val now = System.currentTimeMillis()
-        when {
-            now < schedule.startAtMillis -> {
-                scheduleAlarm(
-                    triggerAt = schedule.startAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_START
-                )
 
-                scheduleAlarm(
-                    triggerAt = schedule.endAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_END
-                )
-            }
-
-            now < schedule.endAtMillis -> {
-                sendAction()
-
-                scheduleAlarm(
-                    triggerAt = schedule.endAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_END
-                )
-            }
-
-            else -> storage.clear()
+        if (now < schedule.startAtMillis) {
+            scheduleAlarm(
+                schedule.startAtMillis,
+                DownloadScheduleReceiver.ACTION_START
+            )
+        } else {
+            sendAction(DownloadScheduleReceiver.ACTION_START)
         }
+
+        scheduleAlarm(
+            schedule.endAtMillis,
+            DownloadScheduleReceiver.ACTION_END
+        )
     }
 
-    fun cancel(){
+    fun cancel() {
         cancelStartAlarm()
         cancelEndAlarm()
         storage.clear()
@@ -65,47 +59,58 @@ internal class DownloadScheduler(context: Context) {
 
         when {
             now >= schedule.endAtMillis -> {
-                cancel()
+                // برای رسیدگی به دانلودهایی که قبل از Restart در حال اجرا بوده‌اند.
+                scheduleAlarm(
+                    now + 1_000L,
+                    DownloadScheduleReceiver.ACTION_END
+                )
             }
 
             now >= schedule.startAtMillis -> {
-                sendAction()
+                // به جای اجرای مستقیم سرویس از BootReceiver،
+                // یک Alarm برای شروع مجدد ثبت می‌کنیم.
+                scheduleAlarm(
+                    now + 1_000L,
+                    DownloadScheduleReceiver.ACTION_START
+                )
 
                 scheduleAlarm(
-                    triggerAt = schedule.endAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_END
+                    schedule.endAtMillis,
+                    DownloadScheduleReceiver.ACTION_END
                 )
             }
 
             else -> {
                 scheduleAlarm(
-                    triggerAt = schedule.startAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_START
+                    schedule.startAtMillis,
+                    DownloadScheduleReceiver.ACTION_START
                 )
 
                 scheduleAlarm(
-                    triggerAt = schedule.endAtMillis,
-                    action = DownloadScheduleReceiver.ACTION_END
+                    schedule.endAtMillis,
+                    DownloadScheduleReceiver.ACTION_END
                 )
             }
         }
     }
 
-    @SuppressLint("ObsoleteSdkInt")
     private fun scheduleAlarm(
         triggerAt: Long,
         action: String
     ) {
         val pendingIntent = createPendingIntent(action)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setAndAllowWhileIdle(
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            alarmManager.canScheduleExactAlarms()
+        ) {
+            alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerAt,
                 pendingIntent
             )
         } else {
-            alarmManager.set(
+            alarmManager.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerAt,
                 pendingIntent
@@ -113,24 +118,26 @@ internal class DownloadScheduler(context: Context) {
         }
     }
 
-    private fun sendAction() {
-        val intent = Intent(appContext, DownloadScheduleReceiver::class.java)
-            .setAction(DownloadScheduleReceiver.ACTION_START)
-
-        appContext.sendBroadcast(intent)
-    }
-
-    private fun createPendingIntent(action: String): PendingIntent {
+    private fun sendAction(action: String) {
         val intent = Intent(
             appContext,
             DownloadScheduleReceiver::class.java
         ).setAction(action)
 
+        appContext.sendBroadcast(intent)
+    }
+
+    private fun createPendingIntent(action: String): PendingIntent {
         val requestCode = when (action) {
             DownloadScheduleReceiver.ACTION_START -> 1001
             DownloadScheduleReceiver.ACTION_END -> 1002
             else -> 1003
         }
+
+        val intent = Intent(
+            appContext,
+            DownloadScheduleReceiver::class.java
+        ).setAction(action)
 
         return PendingIntent.getBroadcast(
             appContext,

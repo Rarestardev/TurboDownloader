@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DownloadDao {
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownload(download: DownloadEntity)
 
@@ -22,7 +23,22 @@ interface DownloadDao {
     suspend fun getChunks(id: String): List<ChunkEntity>
 
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
-    suspend fun updateStatus(id: String, status: String)
+    suspend fun updateStatus(
+        id: String,
+        status: String
+    )
+
+    @Query("""
+        UPDATE downloads
+        SET status = :status,
+            pauseReason = :reason
+        WHERE id = :id
+    """)
+    suspend fun updateStatusAndPauseReason(
+        id: String,
+        status: String,
+        reason: String
+    )
 
     @Query("SELECT * FROM downloads")
     suspend fun getAllDownloadsOnce(): List<DownloadEntity>
@@ -31,7 +47,9 @@ interface DownloadDao {
     fun getAllDownloads(): Flow<List<DownloadEntity>>
 
     @Query("SELECT * FROM downloads WHERE status = :status")
-    fun getAllQueuedDownloads(status: DownloadStatus = DownloadStatus.QUEUED): Flow<List<DownloadEntity>>
+    fun getAllQueuedDownloads(
+        status: DownloadStatus = DownloadStatus.QUEUED
+    ): Flow<List<DownloadEntity>>
 
     @Query("DELETE FROM chunks WHERE downloadId = :id")
     suspend fun deleteChunks(id: String)

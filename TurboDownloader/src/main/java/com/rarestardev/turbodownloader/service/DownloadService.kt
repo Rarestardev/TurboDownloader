@@ -34,7 +34,9 @@ internal class DownloadService : Service() {
             applicationContext,
             DownloadDatabase::class.java,
             "chunk_downloads.db"
-        ).build()
+        )
+            .addMigrations(DownloadDatabase.MIGRATION_2_3)
+            .build()
 
         manager =
             DownloadManagerHolder.manager

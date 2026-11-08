@@ -9,23 +9,16 @@ import com.rarestardev.turbodownloader.service.DownloadService
 class DownloadScheduleReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action ?: return
-
-        if (
-            action != ACTION_START &&
-            action != ACTION_END
-        ) return
+        val serviceAction = when (intent.action) {
+            ACTION_START -> DownloadService.ACTION_SCHEDULE_START
+            ACTION_END -> DownloadService.ACTION_SCHEDULE_END
+            else -> return
+        }
 
         val serviceIntent = Intent(
             context,
             DownloadService::class.java
-        ).apply {
-            this.action = when (action) {
-                ACTION_START -> DownloadService.ACTION_SCHEDULE_START
-                ACTION_END -> DownloadService.ACTION_SCHEDULE_END
-                else -> return
-            }
-        }
+        ).setAction(serviceAction)
 
         try {
             ContextCompat.startForegroundService(
@@ -33,8 +26,11 @@ class DownloadScheduleReceiver : BroadcastReceiver() {
                 serviceIntent
             )
         } catch (exception: Exception) {
-            // بهتر است خطا در logger کتابخانه ثبت شود.
-            exception.printStackTrace()
+            android.util.Log.e(
+                "TurboDownloader",
+                "Unable to start scheduled download service",
+                exception
+            )
         }
     }
 
