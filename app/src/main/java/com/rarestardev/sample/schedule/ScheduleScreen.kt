@@ -2,6 +2,7 @@ package com.rarestardev.sample.schedule
 
 import android.content.ActivityNotFoundException
 import android.text.format.DateFormat
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ import com.rarestardev.turbodownloader.model.SchedulePhase
 import com.rarestardev.turbodownloader.model.ScheduleSignal
 import com.rarestardev.turbodownloader.model.schedulePhase
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.Locale
 
@@ -64,6 +67,7 @@ fun ScheduleRoute(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var revision by remember { mutableIntStateOf(0) }
     val zone = remember { ScheduleClock.resolveZone() }
@@ -110,6 +114,20 @@ fun ScheduleRoute(
             downloader.clearSchedule()
             revision++
         },
+        onQueueSamples = {
+            scope.launch {
+                listOf(
+                    "https://raw.githubusercontent.com/github/gitignore/main/Android.gitignore" to "schedule-a.txt",
+                    "https://raw.githubusercontent.com/github/gitignore/main/Kotlin.gitignore" to "schedule-b.txt"
+                ).forEach { (url, name) ->
+                    try {
+                        downloader.addToQueues(url, name)
+                    } catch (error: Exception) {
+                        Log.e("Turbo_downloader", "Could not queue $name", error)
+                    }
+                }
+            }
+        },
         onRequestExactAlarm = {
             val intent = downloader.exactAlarmAccess().settingsIntent ?: return@ScheduleScreen
             try {
@@ -138,6 +156,7 @@ private fun ScheduleScreen(
     onSchedulingEnabled: (Boolean) -> Unit,
     onSave: (Long, Long) -> Unit,
     onClear: () -> Unit,
+    onQueueSamples: () -> Unit,
     onRequestExactAlarm: () -> Unit
 ) {
     val initialStart = saved?.startAtMillis ?: (now + 5 * 60_000L)
@@ -221,6 +240,14 @@ private fun ScheduleScreen(
                 }
             }
             Text(stringResource(R.string.schedule_preset_title), style = MaterialTheme.typography.titleMedium)
+            PresetButton(
+                stringResource(R.string.schedule_preset_in_one_minute),
+                SchedulePresets.delayed(now, 1, 60),
+                format
+            ) {
+                start = it.first
+                end = it.second
+            }
             PresetButton(stringResource(R.string.schedule_preset_15), SchedulePresets.nextMinutes(now, 15), format) {
                 start = it.first
                 end = it.second
@@ -250,6 +277,13 @@ private fun ScheduleScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.schedule_clear))
+            }
+            OutlinedButton(
+                onClick = onQueueSamples,
+                enabled = schedulingEnabled && saved != null && saved.isBeforeStart(now),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.schedule_queue_samples))
             }
             Text(stringResource(R.string.schedule_behavior_title), style = MaterialTheme.typography.titleMedium)
             listOf(

@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">TurboDownloader</string>
     <string name="schedule_open">زمان‌بندی</string>
+    <string name="download_now">دانلود همین حالا</string>
+    <string name="add_to_queue">افزودن به صف</string>
+    <string name="queue_held">در صف مانده است. تا دکمهٔ شروع، یا تا رسیدن زمان شروعِ زمان‌بندیِ روشن، آغاز نمی‌شود.</string>
+    <string name="start_queued">شروع</string>
     <string name="schedule_enabled">فعال‌سازی</string>
     <string name="schedule_enabled_on">زمان‌بندی روشن است و دانلودها از بازهٔ ذخیره‌شده پیروی می‌کنند.</string>
     <string name="schedule_enabled_off">زمان‌بندی خاموش است و دانلودها با بازه محدود نمی‌شوند.</string>
@@ -27,7 +31,9 @@
     <string name="schedule_save">ذخیرهٔ زمان‌بندی</string>
     <string name="schedule_clear">پاک کردن زمان‌بندی</string>
     <string name="schedule_preset_title">پیشنهادها</string>
+    <string name="schedule_preset_in_one_minute">شروع تا یک دقیقهٔ دیگر، بازه به مدت یک ساعت</string>
     <string name="schedule_preset_15">۱۵ دقیقهٔ آینده</string>
+    <string name="schedule_queue_samples">دو فایل آزمایشی کوچک را در صف بگذار</string>
     <string name="schedule_preset_hour">یک ساعت دیگر، به مدت یک ساعت</string>
     <string name="schedule_preset_night">بازهٔ شب ۰۱:۰۰ تا ۰۶:۰۰</string>
     <string name="schedule_preset_range">%1$s → %2$s</string>

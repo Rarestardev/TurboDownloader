@@ -32,7 +32,7 @@ class DownloadScheduleReceiver : BroadcastReceiver() {
         )
 
         when (signal) {
-            ScheduleSignal.START -> DownloadManagerHolder.manager?.onScheduleStart()
+            ScheduleSignal.START -> DownloadManagerHolder.manager?.onScheduleStart(releaseHeldQueue = true)
             ScheduleSignal.END -> DownloadManagerHolder.manager?.onScheduleEnd()
         }
 

@@ -63,6 +63,15 @@ class ScheduleScreenLogicTest {
     }
 
     @Test
+    fun oneMinutePreset_isADelayedStart_notAOneMinuteDuration() {
+        val now = 1_700_000_000_000L
+        val window = SchedulePresets.delayed(now, delayMinutes = 1, durationMinutes = 60)
+        assertEquals(now + 60_000L, window.first)
+        assertEquals(window.first + 60 * 60_000L, window.second)
+        assertTrue(window.second - window.first > 60_000L)
+    }
+
+    @Test
     fun draftSave_requiresFutureEnd_andExactAlarmWhenNeeded() {
         val now = 1_000_000L
         val valid = ScheduleDraft(now, now + 60_000, now, exactAlarmRequired = true, exactAlarmGranted = true)

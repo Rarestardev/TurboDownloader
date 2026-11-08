@@ -97,6 +97,12 @@ class TurboDownloader private constructor(
         return null
     }
 
+    /**
+     * Saves a download in the queue and does not start it.
+     * It stays held while scheduling is off, while a window is already open, and across
+     * [reconcileSchedule]. It starts when [resume] is called and the window allows it,
+     * or when an enabled schedule reaches its start time.
+     */
     suspend fun addToQueues(
         url: String,
         fileName: String? = null
@@ -162,8 +168,9 @@ class TurboDownloader private constructor(
      * Turns scheduling on or off after this object already exists.
      *
      * The choice is saved. Turning it on applies the saved window again.
-     * Turning it off keeps that window but stops enforcing it: waiting downloads and
-     * downloads paused by the window continue, while a download paused by the user stays paused.
+     * Turning it off keeps that window but stops enforcing it. Downloads paused by the
+     * window may continue. Items placed in the queue stay there until an explicit start.
+     * A download paused by the user stays paused.
      * [setSchedule], [clearSchedule], and [reconcileSchedule] require scheduling to be on.
      */
     var scheduleEnabled: Boolean
@@ -204,7 +211,8 @@ class TurboDownloader private constructor(
     }
 
     /**
-     * Removes the saved window and lets waiting downloads continue.
+     * Removes the saved window. Downloads paused by the window may continue.
+     * Items that were only added to the queue stay held until an explicit start.
      */
     fun clearSchedule() {
         checkScheduleEnabled()

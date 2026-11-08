@@ -148,11 +148,16 @@ Turning scheduling on applies the saved window:
 
 - downloads run only between the saved start and end
 - the window does not repeat
-- outside the window, active downloads pause and new or queued downloads wait
+- outside the window, an immediate download waits; a queued item stays queued
+- when the start time is reached, queued items start; a download you paused yourself stays paused
 - after the end, they stay paused until `clearSchedule()`
 - a download you paused yourself stays paused
 
-Turning scheduling off keeps the saved window but stops enforcing it. Downloads that were waiting for the window, or paused because of it, continue. Downloads you paused yourself stay paused. Set `scheduleEnabled = true` again to apply the same window.
+Turning scheduling off keeps the saved window but stops enforcing it. Downloads that the window itself had paused may continue. Items added only to the queue stay held, and a download you paused yourself stays paused. Set `scheduleEnabled = true` again to arm the same window. Opening the app or calling `reconcileSchedule()` does not start those held items.
+
+`startDownload` is the immediate download. It starts at once when scheduling is off or the window is already open, and waits only when a saved window is still closed.
+
+`addToQueues` never starts a download by itself. Not when scheduling is off, not when the window is already open, and not when a second item is added. Call `resume(id)` to start that held item explicitly. An enabled schedule also starts held items when its start time arrives.
 
 Change the window only while scheduling is on:
 

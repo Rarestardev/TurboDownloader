@@ -172,7 +172,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp),
-                    label = { Text("Address...") },
+                    label = { Text(stringResource(R.string.download_now)) },
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Default.ArrowForward,
@@ -223,15 +223,22 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(Modifier.height(36.dp))
 
-                TextButton( // added to queued
+                TextButton(
                     onClick = {
                         scope.launch {
-                            downloader.addToQueues(urlAddressState)
-                            urlAddressState = ""
+                            if (urlAddressState.isNotEmpty()) {
+                                downloader.addToQueues(urlAddressState)
+                                urlAddressState = ""
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.queue_held),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                 ) {
-                    Text("Added to queue")
+                    Text(stringResource(R.string.add_to_queue))
                 }
 
                 Spacer(Modifier.height(36.dp))
@@ -261,17 +268,15 @@ class MainActivity : ComponentActivity() {
 
                         items(queuedList) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        downloader.resume(DownloadId(it.id))
-                                    },
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(it.fileName)
-
-                                Text(it.status.name)
+                                Text(stringResource(R.string.queue_held))
+                                TextButton(onClick = { downloader.resume(DownloadId(it.id)) }) {
+                                    Text(stringResource(R.string.start_queued))
+                                }
                             }
                         }
                     }
@@ -402,9 +407,30 @@ class MainActivity : ComponentActivity() {
 
             // Pause / Resume / Cancel
             when (entity.status) {
+                DownloadStatus.QUEUED -> {
+                    IconButton(onClick = onResume) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Start",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = onPause) {
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "Pause",
+                            tint = Color.White
+                        )
+                    }
+                }
+
                 DownloadStatus.RUNNING -> {
                     IconButton(onClick = onPause) {
-                        Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "Pause",
+                            tint = Color.White
+                        )
                     }
                 }
 

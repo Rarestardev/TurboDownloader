@@ -1,6 +1,8 @@
 package com.rarestardev.turbodownloader.core
 
 import com.rarestardev.turbodownloader.model.DownloadSchedule
+import com.rarestardev.turbodownloader.state.DownloadStatus
+import com.rarestardev.turbodownloader.state.PauseReason
 import com.rarestardev.turbodownloader.model.ScheduleIssue
 import com.rarestardev.turbodownloader.model.SchedulePhase
 import com.rarestardev.turbodownloader.model.ScheduleSignal
@@ -136,6 +138,18 @@ class ScheduleBehaviorTest {
         assertFalse(ScheduleGate.allowsDownload(true, store.get(), now))
         store.clear()
         assertTrue(ScheduleGate.allowsDownload(true, store.get(), now))
+    }
+
+    @Test
+    fun heldQueue_startsOnlyOnScheduleEdge_andManualPauseStays() {
+        assertFalse(shouldStartWhenWindowOpens(DownloadStatus.QUEUED, PauseReason.NONE, false, releaseHeldQueue = false))
+        assertTrue(shouldStartWhenWindowOpens(DownloadStatus.QUEUED, PauseReason.NONE, false, releaseHeldQueue = true))
+        assertTrue(shouldStartWhenWindowOpens(DownloadStatus.RUNNING, PauseReason.NONE, false, releaseHeldQueue = false))
+        assertTrue(shouldStartWhenWindowOpens(DownloadStatus.PAUSED, PauseReason.SCHEDULE, false, releaseHeldQueue = false))
+        assertFalse(shouldStartWhenWindowOpens(DownloadStatus.PAUSED, PauseReason.MANUAL, false, releaseHeldQueue = true))
+        assertFalse(shouldStartWhenWindowOpens(DownloadStatus.QUEUED, PauseReason.MANUAL, false, releaseHeldQueue = true))
+        assertFalse(shouldStartWhenWindowOpens(DownloadStatus.QUEUED, PauseReason.NONE, true, releaseHeldQueue = true))
+        assertFalse(shouldStartWhenWindowOpens(DownloadStatus.COMPLETED, PauseReason.NONE, false, releaseHeldQueue = true))
     }
 
     @Test

@@ -58,7 +58,7 @@ class DownloadManager(
         readSchedule = { scheduleStorage.get() },
         onStart = {
             scheduleStorage.recordSignal(ScheduleSignal.START, System.currentTimeMillis())
-            onScheduleStart()
+            onScheduleStart(releaseHeldQueue = true)
         },
         onEnd = {
             scheduleStorage.recordSignal(ScheduleSignal.END, System.currentTimeMillis())
@@ -251,6 +251,7 @@ class DownloadManager(
 
     private fun startExistingDownload(entity: DownloadEntity) {
         val id = DownloadId(entity.id)
+        if (isManuallyPaused(id)) return
 
         synchronized(jobs) {
             if (jobs[id.value]?.isActive == true) return
@@ -258,7 +259,7 @@ class DownloadManager(
             val job = scope.launch(Dispatchers.IO) {
 
                 synchronized(schedulerLock) {
-                    manualPausedIds.remove(id)
+                    if (id in manualPausedIds) return@launch
                     schedulePausedIds.remove(id)
                 }
 
@@ -280,11 +281,13 @@ class DownloadManager(
         }
     }
 
-    fun onScheduleStart() = openWindow(forced = false)
+    fun onScheduleStart(releaseHeldQueue: Boolean = false) =
+        openWindow(forced = false, releaseHeldQueue = releaseHeldQueue)
 
-    internal fun releaseScheduleConstraint() = openWindow(forced = true)
+    internal fun releaseScheduleConstraint() =
+        openWindow(forced = true, releaseHeldQueue = false)
 
-    private fun openWindow(forced: Boolean) {
+    private fun openWindow(forced: Boolean, releaseHeldQueue: Boolean) {
         if (!forced && !scheduleStorage.isSchedulingEnabled()) return
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule start")
         if (!canStartNow()) return
@@ -293,26 +296,28 @@ class DownloadManager(
             val downloads = dao.getAllDownloadsOnce()
 
             downloads.forEach { entity ->
+                val id = DownloadId(entity.id)
+                if (!shouldStartWhenWindowOpens(
+                        entity.status,
+                        entity.pauseReason,
+                        isManuallyPaused(id),
+                        releaseHeldQueue
+                    )
+                ) {
+                    return@forEach
+                }
 
-                when {
-                    entity.status == DownloadStatus.QUEUED -> {
-                        ensureServiceRunning()
-                        startExistingDownload(entity)
-                    }
-
-                    entity.status == DownloadStatus.PAUSED &&
-                            entity.pauseReason == PauseReason.SCHEDULE -> {
-
-                        ensureServiceRunning()
-                        resumeByScheduler(DownloadId(entity.id))
-                    }
-
-                    // ممکن است Process قبلی کشته شده باشد و وضعیت
-                    // دیتابیس هنوز RUNNING مانده باشد.
-                    entity.status == DownloadStatus.RUNNING -> {
-                        ensureServiceRunning()
-                        startExistingDownload(entity)
-                    }
+                Log.i(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Window opened; starting ${entity.status} download ${entity.fileName}"
+                )
+                ensureServiceRunning()
+                if (entity.status == DownloadStatus.PAUSED &&
+                    entity.pauseReason == PauseReason.SCHEDULE
+                ) {
+                    resumeByScheduler(id)
+                } else {
+                    startExistingDownload(entity)
                 }
             }
         }
@@ -684,10 +689,9 @@ class DownloadManager(
         }
 
         update(id, DownloadState.Queued(id))
-
-        Log.d(
+        Log.i(
             TurboConstants.TURBO_DOWNLOADER_LOG,
-            "Download added to queue: ${id.value}"
+            "Held in queue until an explicit start or the schedule start: ${entity.fileName}"
         )
 
         return id

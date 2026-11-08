@@ -151,7 +151,7 @@ internal class DownloadService : Service() {
         when (intent?.action) {
 
             ACTION_SCHEDULE_START -> {
-                manager.onScheduleStart()
+                manager.onScheduleStart(releaseHeldQueue = true)
             }
 
             ACTION_SCHEDULE_END -> {
