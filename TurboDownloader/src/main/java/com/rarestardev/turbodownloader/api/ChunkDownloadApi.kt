@@ -32,7 +32,7 @@ object ChunkDownloadApi {
                     DownloadDatabase::class.java,
                     "chunk_downloads.db"
                 )
-                    .fallbackToDestructiveMigration(true)
+                    .addMigrations(DownloadDatabase.MIGRATION_2_3)
                     .build()
 
             val scope =

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,9 +58,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import com.rarestardev.sample.schedule.ScheduleRoute
 import com.rarestardev.sample.ui.theme.MDMTurboTheme
 import com.rarestardev.turbodownloader.core.TurboDownloader
 import com.rarestardev.turbodownloader.listener.DownloadNotificationListener
@@ -72,6 +76,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var downloader: TurboDownloader
+    private var resumeTick by mutableIntStateOf(0)
 
     @SuppressLint("ObsoleteSdkInt")
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -89,6 +94,12 @@ class MainActivity : ComponentActivity() {
 //            .setDir(dir)
             .setAutoThreading(true)
             .build()
+        if (downloader.scheduleEnabled) {
+            downloader.reconcileSchedule()
+        }
+        downloader.setScheduledQueueFinishedListener {
+            finishAndRemoveTask()
+        }
 
         enableEdgeToEdge()
 
@@ -97,6 +108,11 @@ class MainActivity : ComponentActivity() {
                 MainUiScreen()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick++
     }
 
     override fun onDestroy() {
@@ -113,6 +129,18 @@ class MainActivity : ComponentActivity() {
         val queuedList by downloader.queuedListDownload().collectAsState(emptyList())
         var hasPermission by remember { mutableStateOf(false) }
         var urlAddressState by remember { mutableStateOf("") }
+        var showSchedule by remember {
+            mutableStateOf(intent.getBooleanExtra("open_schedule", false))
+        }
+
+        if (showSchedule) {
+            ScheduleRoute(
+                downloader = downloader,
+                resumeTick = resumeTick,
+                onBack = { showSchedule = false }
+            )
+            return
+        }
 
         LaunchedEffect(downloader.hasNotificationPermission()) {
             hasPermission = downloader.hasNotificationPermission()
@@ -135,13 +163,34 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.size(60.dp)
                 )
 
+                TextButton(onClick = { showSchedule = true }) {
+                    Icon(Icons.Default.Schedule, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.schedule_open))
+                }
+
+                var concurrentDownloads by remember {
+                    mutableIntStateOf(downloader.maxConcurrentDownloads)
+                }
+                Text(stringResource(R.string.concurrent_downloads, concurrentDownloads))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..5).forEach { count ->
+                        TextButton(onClick = {
+                            downloader.maxConcurrentDownloads = count
+                            concurrentDownloads = count
+                        }) {
+                            Text(if (count == concurrentDownloads) "[$count]" else count.toString())
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = urlAddressState,
                     onValueChange = { urlAddressState = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp),
-                    label = { Text("Address...") },
+                    label = { Text(stringResource(R.string.download_now)) },
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Default.ArrowForward,
@@ -192,15 +241,22 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(Modifier.height(36.dp))
 
-                TextButton( // added to queued
+                TextButton(
                     onClick = {
                         scope.launch {
-                            downloader.addToQueues(urlAddressState)
-                            urlAddressState = ""
+                            if (urlAddressState.isNotEmpty()) {
+                                downloader.addToQueues(urlAddressState)
+                                urlAddressState = ""
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.queue_held),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                 ) {
-                    Text("Added to queue")
+                    Text(stringResource(R.string.add_to_queue))
                 }
 
                 Spacer(Modifier.height(36.dp))
@@ -230,17 +286,15 @@ class MainActivity : ComponentActivity() {
 
                         items(queuedList) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        downloader.resume(DownloadId(it.id))
-                                    },
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(it.fileName)
-
-                                Text(it.status.name)
+                                Text(stringResource(R.string.queue_held))
+                                TextButton(onClick = { downloader.resume(DownloadId(it.id)) }) {
+                                    Text(stringResource(R.string.start_queued))
+                                }
                             }
                         }
                     }
@@ -371,9 +425,30 @@ class MainActivity : ComponentActivity() {
 
             // Pause / Resume / Cancel
             when (entity.status) {
+                DownloadStatus.QUEUED -> {
+                    IconButton(onClick = onResume) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Start",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = onPause) {
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "Pause",
+                            tint = Color.White
+                        )
+                    }
+                }
+
                 DownloadStatus.RUNNING -> {
                     IconButton(onClick = onPause) {
-                        Icon(Icons.Default.Pause, contentDescription = null, tint = Color.White)
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "Pause",
+                            tint = Color.White
+                        )
                     }
                 }
 

@@ -4,17 +4,22 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.rarestardev.turbodownloader.engine.ChunkDownloader
 import com.rarestardev.turbodownloader.model.DownloadProgress
 import com.rarestardev.turbodownloader.model.DownloadRequest
+import com.rarestardev.turbodownloader.model.ScheduleSignal
 import com.rarestardev.turbodownloader.service.DownloadService
 import com.rarestardev.turbodownloader.state.DownloadId
 import com.rarestardev.turbodownloader.state.DownloadState
 import com.rarestardev.turbodownloader.state.DownloadStatus
+import com.rarestardev.turbodownloader.state.PauseReason
 import com.rarestardev.turbodownloader.storage.DownloadDao
 import com.rarestardev.turbodownloader.storage.DownloadEntity
+import com.rarestardev.turbodownloader.storage.DownloadScheduleStorage
 import com.rarestardev.turbodownloader.utils.TurboConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,14 +43,85 @@ class DownloadManager(
     private val downloader = ChunkDownloader(dao, context)
     private val _state = MutableStateFlow<Map<DownloadId, DownloadState>>(emptyMap())
     val state = _state.asStateFlow()
-    private val pauseFlags = mutableMapOf<String, Boolean>()
     private val jobs = mutableMapOf<String, Job>()
+
+    private val scheduleStorage = DownloadScheduleStorage(
+        context.applicationContext
+    )
+    private val transfers = ConcurrentTransferGate(scheduleStorage.maxConcurrentDownloads())
+
+    private val manualPausedIds = mutableSetOf<DownloadId>()
+    private val schedulePausedIds = mutableSetOf<DownloadId>()
+
+    private val schedulerLock = Any()
+    private val cohortLock = Any()
+    private var scheduledCohort = emptySet<String>()
+    private var cohortNotified = false
+
+    internal var onScheduledQueueFinished: (() -> Unit)? = null
+
+    internal fun activeTransferIds(): List<String> = transfers.activeIds()
+
+    internal fun applyMaxConcurrentDownloads(value: Int) {
+        val effect = transfers.setCap(value)
+        effect.stop.forEach { raw ->
+            scope.launch(Dispatchers.IO) { markConcurrencyHeld(DownloadId(raw)) }
+        }
+        effect.continueRunning.forEach { raw ->
+            scope.launch(Dispatchers.IO) {
+                dao.updateStatusAndPauseReason(
+                    raw,
+                    DownloadStatus.RUNNING.name,
+                    PauseReason.NONE.name
+                )
+            }
+        }
+        effect.start.forEach { raw -> beginTransfer(DownloadId(raw)) }
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=$value ids=${transfers.activeIds()}"
+        )
+    }
+
+    private val windowWatcher = ScheduleWindowWatcher(
+        scope = scope,
+        clock = { System.currentTimeMillis() },
+        readSchedule = { scheduleStorage.get() },
+        onStart = {
+            scheduleStorage.recordSignal(ScheduleSignal.START, System.currentTimeMillis())
+            onScheduleStart(releaseHeldQueue = true)
+        },
+        onEnd = {
+            scheduleStorage.recordSignal(ScheduleSignal.END, System.currentTimeMillis())
+            onScheduleEnd()
+        }
+    )
+
+    private fun isPaused(id: DownloadId): Boolean =
+        synchronized(schedulerLock) {
+            id in manualPausedIds || id in schedulePausedIds || transfers.isStopRequested(id.value)
+        }
+
+    private fun isManuallyPaused(id: DownloadId): Boolean =
+        synchronized(schedulerLock) { id in manualPausedIds }
+
+    private fun canStartNow(): Boolean {
+        return ScheduleGate.allowsDownload(
+            scheduleStorage.isSchedulingEnabled(),
+            scheduleStorage.get(),
+            System.currentTimeMillis()
+        )
+    }
+
+    internal fun armScheduleWindow() = windowWatcher.arm()
+
+    internal fun disarmScheduleWindow() = windowWatcher.disarm()
 
     fun enqueue(request: DownloadRequest): DownloadId {
         ensureServiceRunning()
         val id = DownloadId(UUID.randomUUID().toString())
 
-        val job = scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val totalSize = downloader.getFileSize(request.uri)
 
             val actualThreadCount = if (request.autoThreading && totalSize > 0) {
@@ -68,39 +144,67 @@ class DownloadManager(
                 "Used thread for downloads  = ThreadCount : $actualThreadCount , FileSize : $totalSize"
             )
             dao.insertDownload(entity)
-            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            update(id, DownloadState.Queued(id))
 
-            executeDownload(entity)
+            if (!canStartNow()) {
+                update(id, DownloadState.Queued(id))
+                return@launch
+            }
+
+            beginTransfer(id)
         }
 
-        jobs[id.value] = job
         Log.d(TurboConstants.TURBO_DOWNLOADER_LOG, "queued download...")
         return id
     }
 
     fun resume(id: DownloadId) {
-        ensureServiceRunning()
-        val job = scope.launch(Dispatchers.IO) {
-            jobs.remove(id.value)
+        scope.launch(Dispatchers.IO) {
 
-            pauseFlags[id.value] = false
             val entity = dao.getDownload(id.value) ?: return@launch
-            dao.updateStatus(id.value, DownloadStatus.RUNNING.name)
-            executeDownload(entity)
-        }
 
-        jobs[id.value] = job
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "resume downloading...")
+            synchronized(schedulerLock) {
+                manualPausedIds.remove(id)
+                schedulePausedIds.remove(id)
+            }
+
+            if (!canStartNow()) {
+                dao.updateStatusAndPauseReason(
+                    id.value,
+                    DownloadStatus.QUEUED.name,
+                    PauseReason.NONE.name
+                )
+
+                update(id, DownloadState.Queued(id))
+                return@launch
+            }
+
+            ensureServiceRunning()
+            beginTransfer(id)
+        }
     }
 
     fun pause(id: DownloadId) {
-        pauseFlags[id.value] = true
+        synchronized(schedulerLock) {
+            manualPausedIds.add(id)
+            schedulePausedIds.remove(id)
+            if (!transfers.isOccupying(id.value)) {
+                transfers.onSlotReleased(id.value)
+            }
+        }
+
         scope.launch(Dispatchers.IO) {
-            dao.updateStatus(id.value, DownloadStatus.PAUSED.name)
+            dao.updateStatusAndPauseReason(
+                id.value,
+                DownloadStatus.PAUSED.name,
+                PauseReason.MANUAL.name
+            )
+
             val entity = dao.getDownload(id.value) ?: return@launch
-            val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-            /*update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))*/
+
+            val downloaded = dao.getChunks(id.value).sumOf {
+                it.downloaded
+            }
+
             update(
                 id,
                 DownloadState.Paused(
@@ -113,15 +217,258 @@ class DownloadManager(
                 )
             )
         }
+    }
 
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "pause downloading...")
+    fun pauseByScheduler(id: DownloadId) {
+        scope.launch(Dispatchers.IO) {
+
+            val entity = dao.getDownload(id.value) ?: return@launch
+
+            if (entity.status != DownloadStatus.RUNNING) {
+                return@launch
+            }
+
+            synchronized(schedulerLock) {
+                if (id in manualPausedIds) return@launch
+
+                schedulePausedIds.add(id)
+            }
+
+            dao.updateStatusAndPauseReason(
+                id.value,
+                DownloadStatus.PAUSED.name,
+                PauseReason.SCHEDULE.name
+            )
+
+            val downloaded = dao.getChunks(id.value).sumOf {
+                it.downloaded
+            }
+
+            update(
+                id,
+                DownloadState.Paused(
+                    id,
+                    DownloadProgress(
+                        totalBytes = entity.totalBytes,
+                        downloadBytes = downloaded,
+                        status = DownloadStatus.PAUSED
+                    )
+                )
+            )
+        }
+    }
+
+    fun resumeByScheduler(id: DownloadId) {
+        scope.launch(Dispatchers.IO) {
+
+            if (!canStartNow()) return@launch
+
+            val entity = dao.getDownload(id.value) ?: return@launch
+
+            if (entity.pauseReason != PauseReason.SCHEDULE) {
+                return@launch
+            }
+
+            synchronized(schedulerLock) {
+                if (id in manualPausedIds) return@launch
+                schedulePausedIds.remove(id)
+            }
+
+            ensureServiceRunning()
+            beginTransfer(id)
+        }
+    }
+
+    private fun beginTransfer(id: DownloadId) {
+        if (isManuallyPaused(id)) return
+        if (!canStartNow()) return
+        if (!transfers.requestSlot(id.value)) {
+            scope.launch(Dispatchers.IO) { markConcurrencyHeld(id) }
+            Log.i(
+                TurboConstants.TURBO_DOWNLOADER_LOG,
+                "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} held=$id"
+            )
+            return
+        }
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} ids=${transfers.activeIds()}"
+        )
+        synchronized(jobs) {
+            if (jobs[id.value]?.isActive == true) return
+            val job = scope.launch(Dispatchers.IO) {
+                if (isManuallyPaused(id)) {
+                    startAdmitted(transfers.onSlotReleased(id.value))
+                    return@launch
+                }
+                val entity = dao.getDownload(id.value) ?: run {
+                    startAdmitted(transfers.onSlotReleased(id.value))
+                    return@launch
+                }
+                dao.updateStatusAndPauseReason(
+                    id.value,
+                    DownloadStatus.RUNNING.name,
+                    PauseReason.NONE.name
+                )
+                executeDownload(
+                    entity.copy(
+                        status = DownloadStatus.RUNNING,
+                        pauseReason = PauseReason.NONE
+                    )
+                )
+            }
+            jobs[id.value] = job
+        }
+    }
+
+    private fun startAdmitted(ids: List<String>, afterCurrent: String? = null) {
+        val later = if (afterCurrent == null) emptyList() else ids.filter { it == afterCurrent }
+        val now = if (afterCurrent == null) ids else ids.filter { it != afterCurrent }
+        now.forEach { beginTransfer(DownloadId(it)) }
+        if (later.isNotEmpty()) {
+            jobs[afterCurrent]?.invokeOnCompletion {
+                scope.launch { later.forEach { beginTransfer(DownloadId(it)) } }
+            }
+        }
+    }
+
+    private suspend fun markConcurrencyHeld(id: DownloadId) {
+        if (isManuallyPaused(id)) return
+        val entity = dao.getDownload(id.value) ?: return
+        if (entity.pauseReason == PauseReason.MANUAL) return
+        val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
+        dao.updateStatusAndPauseReason(
+            id.value,
+            DownloadStatus.PAUSED.name,
+            PauseReason.CONCURRENCY.name
+        )
+        update(
+            id,
+            DownloadState.Paused(
+                id,
+                DownloadProgress(
+                    totalBytes = entity.totalBytes,
+                    downloadBytes = downloaded,
+                    status = DownloadStatus.PAUSED
+                )
+            )
+        )
+    }
+
+    private suspend fun haltTransfer(id: DownloadId, totalBytes: Long, downloaded: Long) {
+        val manual = isManuallyPaused(id)
+        val schedule = !manual && !canStartNow()
+        val concurrency = !manual && !schedule
+        when {
+            schedule -> persistScheduleHold(id)
+            concurrency -> dao.updateStatusAndPauseReason(
+                id.value,
+                DownloadStatus.PAUSED.name,
+                PauseReason.CONCURRENCY.name
+            )
+        }
+        update(
+            id,
+            DownloadState.Paused(
+                id,
+                DownloadProgress(
+                    totalBytes = totalBytes,
+                    downloadBytes = downloaded,
+                    status = DownloadStatus.PAUSED
+                )
+            )
+        )
+        val next = if (concurrency && transfers.isStopRequested(id.value)) {
+            transfers.onConcurrencyStopped(id.value)
+        } else {
+            transfers.onSlotReleased(id.value)
+        }
+        startAdmitted(next, id.value)
+        Log.i(
+            TurboConstants.TURBO_DOWNLOADER_LOG,
+            "Concurrent file downloads active=${transfers.activeIds().size} cap=${transfers.cap} ids=${transfers.activeIds()}"
+        )
+    }
+
+    fun onScheduleStart(releaseHeldQueue: Boolean = false) =
+        openWindow(forced = false, releaseHeldQueue = releaseHeldQueue)
+
+    internal fun releaseScheduleConstraint() =
+        openWindow(forced = true, releaseHeldQueue = false)
+
+    private fun openWindow(forced: Boolean, releaseHeldQueue: Boolean) {
+        if (!forced && !scheduleStorage.isSchedulingEnabled()) return
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule start")
+        if (!canStartNow()) return
+
+        scope.launch(Dispatchers.IO) {
+            val downloads = dao.getAllDownloadsOnce()
+            if (releaseHeldQueue) {
+                val cohort = downloads.filter { entity ->
+                    entity.status == DownloadStatus.QUEUED && shouldStartWhenWindowOpens(
+                        entity.status,
+                        entity.pauseReason,
+                        isManuallyPaused(DownloadId(entity.id)),
+                        releaseHeldQueue = true
+                    )
+                }.map { it.id }.toSet()
+                if (cohort.isNotEmpty()) beginScheduledCohort(cohort)
+            }
+
+            downloads.forEach { entity ->
+                val id = DownloadId(entity.id)
+                if (!shouldStartWhenWindowOpens(
+                        entity.status,
+                        entity.pauseReason,
+                        isManuallyPaused(id),
+                        releaseHeldQueue
+                    )
+                ) {
+                    return@forEach
+                }
+
+                Log.i(
+                    TurboConstants.TURBO_DOWNLOADER_LOG,
+                    "Window opened; starting ${entity.status} download ${entity.fileName}"
+                )
+                ensureServiceRunning()
+                if (entity.status == DownloadStatus.PAUSED &&
+                    entity.pauseReason == PauseReason.SCHEDULE
+                ) {
+                    resumeByScheduler(id)
+                } else {
+                    beginTransfer(id)
+                }
+            }
+        }
+    }
+
+    fun onScheduleEnd() {
+        if (!scheduleStorage.isSchedulingEnabled()) return
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Applying schedule pause")
+        val activeIds = synchronized(jobs) {
+            jobs.filterValues { it.isActive }.keys.toList()
+        }
+        synchronized(schedulerLock) {
+            activeIds.map { DownloadId(it) }
+                .filter { it !in manualPausedIds }
+                .forEach { schedulePausedIds.add(it) }
+        }
+        scope.launch(Dispatchers.IO) {
+            val downloads = dao.getAllDownloadsOnce()
+
+            downloads
+                .filter { it.status == DownloadStatus.RUNNING }
+                .forEach { entity ->
+                    pauseByScheduler(DownloadId(entity.id))
+                }
+        }
     }
 
     fun cancel(id: DownloadId) {
         scope.launch(Dispatchers.IO) {
             jobs[id.value]?.cancel()
             jobs.remove(id.value)
-            pauseFlags[id.value] = false
 
             update(
                 id,
@@ -186,9 +533,9 @@ class DownloadManager(
                         )
                     }
                 }) {
-                    pauseFlags[id.value] == true
+                    isPaused(id)
                 }
-                if (pauseFlags[id.value] == true) {
+                if (isPaused(id)) {
                     update(
                         id,
                         DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded))
@@ -206,7 +553,7 @@ class DownloadManager(
             } finally {
                 jobs.remove(id.value)
 
-                if (pauseFlags[id.value] != true) {
+                if (!isPaused(id)) {
                     val tempDir = File(context.cacheDir, "${id.value}_tmp")
                     if (tempDir.exists()) tempDir.deleteRecursively()
                 }
@@ -231,6 +578,35 @@ class DownloadManager(
             context.startService(intent)
         }
         Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "ensureServiceRunning.")
+    }
+
+    private fun beginScheduledCohort(ids: Set<String>) {
+        synchronized(cohortLock) {
+            scheduledCohort = ids
+            cohortNotified = false
+        }
+    }
+
+    private suspend fun maybeFinishScheduledQueueRun() {
+        if (!scheduleStorage.isFinishAfterScheduledQueue()) return
+        val cohort = synchronized(cohortLock) { scheduledCohort }
+        val rows = dao.getAllDownloadsOnce()
+        val statusById = rows.associate { it.id to it.status }
+        val runningIds = rows.filter { it.status == DownloadStatus.RUNNING }.map { it.id }.toSet()
+        if (!scheduledQueueRunFinished(true, cohort, statusById, runningIds)) return
+        val fire = synchronized(cohortLock) {
+            if (cohortNotified || scheduledCohort != cohort) {
+                false
+            } else {
+                cohortNotified = true
+                true
+            }
+        }
+        if (!fire) return
+        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Scheduled queue finished; stopping download service")
+        context.stopService(Intent(context, DownloadService::class.java))
+        val callback = onScheduledQueueFinished ?: return
+        Handler(Looper.getMainLooper()).post { callback() }
     }
 
     private fun stopServiceIfIdle() {
@@ -276,9 +652,9 @@ class DownloadManager(
         var downloadedBeforeRetry = dao.getChunks(id.value).sumOf { it.downloaded }
 
         while (currentAttempt <= maxRetries){
-            if (pauseFlags[id.value] == true){
+            if (shouldStop(id)){
                 val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                haltTransfer(id, entity.totalBytes, downloaded)
                 return
             }
 
@@ -313,22 +689,24 @@ class DownloadManager(
                             )
                         }
                     },
-                    isPaused = { pauseFlags[id.value] == true }
+                    isPaused = { shouldStop(id) }
                 )
 
-                if (pauseFlags[id.value] == true) {
-                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                if (shouldStop(id)) {
+                    haltTransfer(id, entity.totalBytes, downloaded)
                     return
                 }
 
                 dao.updateStatus(id.value, DownloadStatus.COMPLETED.name)
                 update(id, DownloadState.Completed(id, resultUri))
+                startAdmitted(transfers.onSlotReleased(id.value))
+                maybeFinishScheduledQueueRun()
                 return
 
             } catch (e: Exception) {
-                if (pauseFlags[id.value] == true) {
+                if (isPaused(id)) {
                     val downloaded = dao.getChunks(id.value).sumOf { it.downloaded }
-                    update(id, DownloadState.Paused(id, DownloadProgress(entity.totalBytes, downloaded)))
+                    haltTransfer(id, entity.totalBytes, downloaded)
                     return
                 }
                 @Suppress("DEPRECATION")
@@ -355,6 +733,8 @@ class DownloadManager(
                 } else {
                     dao.updateStatus(id.value, DownloadStatus.FAILED.name)
                     update(id, DownloadState.Failed(id, e))
+                    startAdmitted(transfers.onSlotReleased(id.value))
+                    maybeFinishScheduledQueueRun()
                     val tempDir = File(context.filesDir, "chunks_${entity.id}")
                     if (tempDir.exists()) tempDir.deleteRecursively()
                     return
@@ -403,6 +783,22 @@ class DownloadManager(
         }
     }
 
+    private fun shouldStop(id: DownloadId): Boolean {
+        return isPaused(id) || (!isManuallyPaused(id) && !canStartNow())
+    }
+
+    private suspend fun persistScheduleHold(id: DownloadId) {
+        if (isManuallyPaused(id) || canStartNow()) return
+        synchronized(schedulerLock) {
+            schedulePausedIds.add(id)
+        }
+        dao.updateStatusAndPauseReason(
+            id.value,
+            DownloadStatus.PAUSED.name,
+            PauseReason.SCHEDULE.name
+        )
+    }
+
     private fun computeAutoThreadCount(fileSizeBytes: Long): Int {
         val mb = fileSizeBytes / (1024 * 1024)
         return when {
@@ -444,10 +840,9 @@ class DownloadManager(
         }
 
         update(id, DownloadState.Queued(id))
-
-        Log.d(
+        Log.i(
             TurboConstants.TURBO_DOWNLOADER_LOG,
-            "Download added to queue: ${id.value}"
+            "Held in queue until an explicit start or the schedule start: ${entity.fileName}"
         )
 
         return id

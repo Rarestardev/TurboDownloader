@@ -17,7 +17,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 internal class DownloadService : Service() {
+    companion object {
+        const val ACTION_SCHEDULE_START =
+            "com.rarestardev.turbodownloader.service.SCHEDULE_START"
 
+        const val ACTION_SCHEDULE_END =
+            "com.rarestardev.turbodownloader.service.SCHEDULE_END"
+    }
     private lateinit var manager: DownloadManager
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var foregroundStarted = false
@@ -28,7 +34,9 @@ internal class DownloadService : Service() {
             applicationContext,
             DownloadDatabase::class.java,
             "chunk_downloads.db"
-        ).build()
+        )
+            .addMigrations(DownloadDatabase.MIGRATION_2_3)
+            .build()
 
         manager =
             DownloadManagerHolder.manager
@@ -36,7 +44,7 @@ internal class DownloadService : Service() {
                     val newManager = DownloadManager(
                         db.dao(),
                         serviceScope,
-                        this
+                        applicationContext
                     )
 
                     DownloadManagerHolder.manager = newManager
@@ -126,43 +134,50 @@ internal class DownloadService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        val id = intent?.getStringExtra("DOWNLOAD_ID")
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
 
-        if (id != null) {
-            when (action) {
-                NotificationHelper.ACTION_PAUSE -> {
-                    manager.pause(
-                        DownloadId(id)
-                    )
+        if (!foregroundStarted) {
+            startForeground(
+                1,
+                NotificationHelper.createForeground(this)
+            )
+            foregroundStarted = true
+        }
+
+        when (intent?.action) {
+
+            ACTION_SCHEDULE_START -> {
+                manager.onScheduleStart(releaseHeldQueue = true)
+            }
+
+            ACTION_SCHEDULE_END -> {
+                manager.onScheduleEnd()
+            }
+
+            NotificationHelper.ACTION_PAUSE -> {
+                intent.getStringExtra("DOWNLOAD_ID")?.let {
+                    manager.pause(DownloadId(it))
                 }
+            }
 
-                NotificationHelper.ACTION_RESUME -> {
-                    manager.resume(
-                        DownloadId(id)
-                    )
+            NotificationHelper.ACTION_RESUME -> {
+                intent.getStringExtra("DOWNLOAD_ID")?.let {
+                    manager.resume(DownloadId(it))
                 }
+            }
 
-                NotificationHelper.ACTION_CANCEL -> {
-                    manager.cancel(
-                        DownloadId(id)
-                    )
-
-                    val nm =
-                        getSystemService(
-                            NOTIFICATION_SERVICE
-                        ) as NotificationManager
-
-                    nm.cancel(
-                        notificationId(DownloadId(id))
-                    )
+            NotificationHelper.ACTION_CANCEL -> {
+                intent.getStringExtra("DOWNLOAD_ID")?.let {
+                    manager.cancel(DownloadId(it))
                 }
             }
         }
 
-        Log.i(TurboConstants.TURBO_DOWNLOADER_LOG, "Download service start commend...")
-        return START_REDELIVER_INTENT
+        return START_STICKY
     }
 
     override fun onDestroy() {

@@ -20,6 +20,7 @@ TurboDownloader supports resumable downloads, foreground service, download notif
 - 📱 Android 7.0+ (API 24)
 - ⚡ Kotlin First
 - 🧩 Easy Builder API
+- 🕒 One-time download windows, turned on or off at runtime
 - 🎯 Lightweight & easy to integrate
 
 ---
@@ -117,10 +118,89 @@ lifecycleScope.launch {
 
 | Method | Description |
 |---------|-------------|
-| setThread(count) | Number of download threads |
+| setThread(count) | Chunk threads used inside one file. This is not how many files download at once. |
 | setDir(file) | Download destination |
 | setPermissionChecked(true) | Automatically request notification permission |
 | setShowFormatter(true) | Enable speed & ETA formatter |
+| enableSchedule(true) | Optional. Sets the initial value of `scheduleEnabled` only. Omit it to keep the last saved choice and change scheduling later on the instance. |
+
+---
+
+## Download schedule
+
+Scheduling stays off until you turn it on. Do that on the live instance, not only in the builder:
+
+```kotlin
+val downloader = TurboDownloader.Builder(context)
+    .setThread(8)
+    .build()
+
+if (downloader.scheduleEnabled) {
+    downloader.reconcileSchedule()
+}
+
+downloader.scheduleEnabled = true
+```
+
+`scheduleEnabled` is saved. The next time the process starts, read it and call `reconcileSchedule()` when it is already true so the saved window is armed again after a restart or force-stop.
+
+Turning scheduling on applies the saved window:
+
+- downloads run only between the saved start and end
+- the window does not repeat
+- outside the window, an immediate download waits; a queued item stays queued
+- when the start time is reached, queued items start; a download you paused yourself stays paused
+- after the end, they stay paused until `clearSchedule()`
+- a download you paused yourself stays paused
+
+Turning scheduling off keeps the saved window but stops enforcing it. Downloads that the window itself had paused may continue. Items added only to the queue stay held, and a download you paused yourself stays paused. Set `scheduleEnabled = true` again to arm the same window. Opening the app or calling `reconcileSchedule()` does not start those held items.
+
+```kotlin
+downloader.maxConcurrentDownloads = 2
+```
+
+`maxConcurrentDownloads` defaults to 1, is saved, and accepts only 1 through 5. It is not a builder option. It limits how many files transfer at the same time. `setThread` still sets how many chunks one file uses. Lowering the value keeps the earliest active files and cooperatively pauses the later ones, with their progress intact, until a slot is free. That pause is not a manual pause, a failure, or a cancellation. Raising the value resumes those held files. It does not start items that were only added to the queue. A scheduled queue does not count as finished while one of its files is still held for this limit.
+
+`startDownload` is the immediate download. It starts at once when scheduling is off or the window is already open, and waits only when a saved window is still closed.
+
+`addToQueues` never starts a download by itself. Not when scheduling is off, not when the window is already open, and not when a second item is added. Call `resume(id)` to start that held item explicitly. An enabled schedule also starts held items when its start time arrives.
+
+After that scheduled run, the host can ask the library to stop its own download service and report that the queue finished:
+
+```kotlin
+downloader.finishAfterScheduledQueue = true
+downloader.setScheduledQueueFinishedListener {
+    finishAndRemoveTask()
+}
+```
+
+`finishAfterScheduledQueue` defaults to false, is saved, and is not a builder option. The library stops only its download foreground service, which removes that notification. `finishAndRemoveTask()` finishes the app's activities and removes its task from Recents. It does not kill the process and it is not a force-stop. Android may keep the process cached.
+
+The callback runs once per schedule start, and only when every download released by that start has completed and nothing is still transferring. It does not run for an empty queue, for one finished item while another from that run is still queued, running, paused, retrying, failed, or cancelled, or merely because the window ended. A download you paused before the run, or added to the queue after the run started, is not part of that run. A new queue entry stays held. An unrelated download that is still running keeps the service and the screen up. A failed item in the run stays unresolved until it later completes successfully.
+
+Change the window only while scheduling is on:
+
+```kotlin
+downloader.scheduleEnabled = true
+downloader.setSchedule(
+    DownloadSchedule(
+        startAtMillis = start,
+        endAtMillis = end
+    )
+)
+downloader.clearSchedule()
+val saved = downloader.currentSchedule()
+```
+
+`setSchedule`, `clearSchedule`, and `reconcileSchedule` throw if scheduling is off. `currentSchedule()` still returns a window that was kept while scheduling is off. The end must be after the start and in the future. A window may already have started.
+
+Exact alarms:
+
+- Android 7 through 11 fire the window at the chosen time without an extra permission.
+- On Android 12 and later, the window opens on time while the app is in the background only if exact alarms are allowed. `exactAlarmAccess()` reports whether that permission is required, whether it is granted, and the settings screen that requests it.
+- While this process is alive, the window still opens and closes on time if exact alarms are unavailable. A stopped process needs the exact alarm to wake it.
+
+The library manifest already declares `SCHEDULE_EXACT_ALARM` and `RECEIVE_BOOT_COMPLETED`.
 
 ---
 
@@ -149,7 +229,7 @@ lifecycleScope.launch {
 - [ ] Download Priority
 - [ ] Download Groups
 - [x] Retry Failed Downloads
-- [ ] Download Scheduler
+- [x] Download Scheduler
 - [ ] Wi-Fi Only Downloads
 - [ ] Download Speed Limiter
 - [x] Download Listener

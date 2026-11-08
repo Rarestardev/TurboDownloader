@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- برای Exact Alarm در صورت نیاز و با دسترسی کاربر -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <application>
         <service
             android:name=".service.DownloadService"
@@ -25,5 +30,27 @@
                 android:value="androidx.startup" />
 
         </provider>
+
+        <receiver
+            android:name=".recevier.DownloadScheduleReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.rarestardev.turbodownloader.SCHEDULE_START" />
+                <action android:name="com.rarestardev.turbodownloader.SCHEDULE_END" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".recevier.DownloadScheduleBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+
+        </receiver>
     </application>
 </manifest>
