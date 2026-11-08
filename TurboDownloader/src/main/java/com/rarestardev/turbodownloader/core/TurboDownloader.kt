@@ -25,7 +25,8 @@ class TurboDownloader private constructor(
     private val context: Context,
     private val threadCount: Int,
     private val showFormatter: Boolean,
-    private val autoThreading: Boolean
+    private val autoThreading: Boolean,
+    private val enableSchedule: Boolean
 ) {
     private val manager = ChunkDownloadApi.get(context)
     private var notificationListener: DownloadNotificationListener? = null
@@ -48,10 +49,6 @@ class TurboDownloader private constructor(
      * Internal getter for TorrentManager used for unit testing.
      */
     internal fun getTorrentManager() = torrentManager
-
-    init {
-        // Initialization logic
-    }
 
     suspend fun startDownload(
         url: String,
@@ -184,6 +181,7 @@ class TurboDownloader private constructor(
         private var threadCount: Int = 4
         private var showFormatter: Boolean = false
         private var autoThreading: Boolean = false
+        private var enableSchedule: Boolean = false
 
         fun setAutoThreading(enabled: Boolean) = apply {
             autoThreading = enabled
@@ -197,6 +195,8 @@ class TurboDownloader private constructor(
             threadCount = count
         }
 
+        fun enableSchedule(enabled: Boolean = true) = apply { enableSchedule = enabled }
+
         fun build(): TurboDownloader {
             if (threadCount <= 0)
                 throw IllegalArgumentException("Thread count must be greater than 0")
@@ -208,7 +208,8 @@ class TurboDownloader private constructor(
                 context = context.applicationContext,
                 threadCount = threadCount,
                 showFormatter = showFormatter,
-                autoThreading = autoThreading
+                autoThreading = autoThreading,
+                enableSchedule = enableSchedule
             )
         }
     }
